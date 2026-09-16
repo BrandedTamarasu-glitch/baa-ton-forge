@@ -68,12 +68,24 @@ need root review. Scope instructions do not provide filesystem isolation.
 
 ## Prepare and record a lane
 
-Reconciliation and verification are also native model-callable tools:
-`forgeflow_reconcile_lane(filename, taskId, workflowId)` and
-`forgeflow_verify_lane(workflowId, commit, evidence)`. When asking the Pi agent
-to perform these operations, name these tools. They execute within the live
-extension and persist session entries; shell imports only return calculations.
-The slash commands below remain available for direct user input.
+All four operations are native model-callable tools:
+
+| Tool | Arguments | Result |
+| --- | --- | --- |
+| `forgeflow_plan_lanes` | `filename` | Lane preview and saved brief hash |
+| `forgeflow_prepare_lane` | `filename`, `taskId` | Checked handoff and saved preparation |
+| `forgeflow_reconcile_lane` | `filename`, `taskId`, `workflowId` | Validated recovery of a missing mapping |
+| `forgeflow_verify_lane` | `workflowId`, `commit`, `evidence` | Saved root verification |
+
+When asking the Pi agent to perform these operations, name these tools. They
+execute within the live extension and persist session entries; shell imports
+only return calculations. Preview and prepare do not call Baa-ton or dispatch.
+The slash commands below use the same implementations and remain available for
+direct user input. Relative brief paths resolve against the Pi root checkout.
+
+For a new task, ask Pi to call `forgeflow_plan_lanes` and then
+`forgeflow_prepare_lane` for the selected task. Review the handoff before asking
+it to call `herdr_plan` and `herdr_dispatch`. Do not replan a completed trial.
 
 In the registered Pi root, preview the real brief, then prepare one lane:
 

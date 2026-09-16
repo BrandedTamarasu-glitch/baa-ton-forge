@@ -12,9 +12,25 @@ function splitTask(args) {
   if (!match) throw new Error('Usage: /forgeflow-prepare-lane "path/to/brief.md" task-id');
   return { filename: match[1].replace(/^"(.*)"$/, '$1'), taskId: match[2] };
 }
+function renderHandoff(prepared) {
+  return `Prepared ${prepared.taskId} at ${prepared.targetHead}.\nRoot must verify Baa-ton readiness and call herdr_plan with these exact arguments. Dispatch remains a separate explicit action.\n\n${JSON.stringify(prepared.planArguments, null, 2)}`;
+}
 
 export default function adapter(pi) {
   const pending = new Map();
+  async function preview(params, ctx) {
+    const result = await loadPreview(path.resolve(ctx.cwd, params.filename));
+    pi.appendEntry(ENTRY, { kind: 'preview', sourcePath: result.sourcePath, sourceSha256: result.sourceSha256 });
+    return result;
+  }
+  async function prepare(params, ctx) {
+    const filename = path.resolve(ctx.cwd, params.filename);
+    const history = records(ctx);
+    const previous = history.findLast(item => item.kind === 'preview' && item.sourcePath === filename);
+    const prepared = await prepareLane({ filename, taskId: params.taskId, preview: previous, cwd: ctx.cwd, records: history });
+    pi.appendEntry(ENTRY, prepared);
+    return prepared;
+  }
   async function reconcile(params, ctx) {
     const mapped = await reconcileLane({ filename: path.resolve(ctx.cwd, params.filename), taskId: params.taskId, workflowId: params.workflowId, cwd: ctx.cwd, sessionFile: ctx.sessionManager.getSessionFile() });
     const previous = records(ctx).filter(item => item.kind === 'planned' && (item.workflowId === mapped.workflowId || (item.root === mapped.root && item.sourcePath === mapped.sourcePath && item.taskId === mapped.taskId)));
@@ -30,6 +46,8 @@ export default function adapter(pi) {
     return verified;
   }
   for (const definition of [
+    { name: 'forgeflow_plan_lanes', label: 'Preview workflow lanes', fields: ['filename'], run: preview, render: renderPreview, description: 'Preview a structured Forgeflow brief and save its hash in this live Pi session. Returns lane scopes, dependencies, blockers and proposed planning arguments. Does not call Baa-ton, create worktrees, run checks or dispatch. Use this tool before forgeflow_prepare_lane; shell imports do not save session records.' },
+    { name: 'forgeflow_prepare_lane', label: 'Prepare workflow lane', fields: ['filename', 'taskId'], run: prepare, render: renderHandoff, description: 'Validate a previously previewed brief and persist a checked lane handoff in this live Pi session. Requires current Herdr identity, clean committed checkouts, a distinct linked worktree for writers, and verified integrated dependencies. Returns exact herdr_plan arguments; does not plan or dispatch. Call herdr_plan separately only under existing authorization.' },
     { name: 'forgeflow_reconcile_lane', label: 'Reconcile workflow mapping', fields: ['filename', 'taskId', 'workflowId'], run: reconcile, description: 'Persist a missing adapter mapping in this live Pi session after validating the durable Baa-ton workflow against the brief and root identity. Use this native tool, not shell imports of prepare.js; shell calls cannot save Pi session records. Does not dispatch or mark verified.' },
     { name: 'forgeflow_verify_lane', label: 'Record root verification', fields: ['workflowId', 'commit', 'evidence'], run: verify, description: 'Persist root verification in this live Pi session after independently checking the lane. Requires a mapped workflow, durable completion receipt, clean lane at the full commit hash, and integration into the root. Evidence must describe checks actually rerun and their results. Use this native tool rather than shell imports.' },
   ]) {
@@ -38,7 +56,7 @@ export default function adapter(pi) {
       parameters: { type: 'object', properties: Object.fromEntries(definition.fields.map(field => [field, { type: 'string', minLength: 1 }])), required: definition.fields, additionalProperties: false },
       execute: async (_id, params, _signal, _update, ctx) => {
         const record = await definition.run(params, ctx);
-        return { content: [{ type: 'text', text: `Saved ${record.kind} record for ${record.taskId} (${record.workflowId}) in this Pi session.` }], details: record };
+        return { content: [{ type: 'text', text: definition.render ? definition.render(record) : `Saved ${record.kind} record for ${record.taskId} (${record.workflowId}) in this Pi session.` }], details: record };
       },
     });
   }
@@ -49,9 +67,8 @@ export default function adapter(pi) {
         let filename = args.trim();
         if (filename.startsWith('"') && filename.endsWith('"')) filename = filename.slice(1, -1);
         if (!filename) throw new Error('Usage: /forgeflow-plan-lanes path/to/brief.md');
-        const preview = await loadPreview(path.resolve(ctx.cwd, filename));
-        pi.appendEntry?.(ENTRY, { kind: 'preview', sourcePath: preview.sourcePath, sourceSha256: preview.sourceSha256 });
-        pi.sendMessage({ customType: 'forgeflow-lane-preview', content: renderPreview(preview), display: true, details: preview }, { triggerTurn: false });
+        const result = await preview({ filename }, ctx);
+        pi.sendMessage({ customType: 'forgeflow-lane-preview', content: renderPreview(result), display: true, details: result }, { triggerTurn: false });
       } catch (error) {
         ctx.ui.notify(message(error), 'error');
       }
@@ -62,12 +79,8 @@ export default function adapter(pi) {
     handler: async (args, ctx) => {
       try {
         const { filename, taskId } = splitTask(args);
-        const resolved = path.resolve(ctx.cwd, filename);
-        const history = records(ctx);
-        const preview = history.findLast(item => item.kind === 'preview' && item.sourcePath === resolved);
-        const prepared = await prepareLane({ filename: resolved, taskId, preview, cwd: ctx.cwd, records: history });
-        pi.appendEntry(ENTRY, prepared);
-        pi.sendMessage({ customType: 'forgeflow-lane-handoff', display: true, details: prepared, content: `Prepared ${taskId} at ${prepared.targetHead}.\nRoot must verify Baa-ton readiness and call herdr_plan with these exact arguments. Dispatch remains a separate explicit action.\n\n${JSON.stringify(prepared.planArguments, null, 2)}` }, { triggerTurn: false });
+        const prepared = await prepare({ filename, taskId }, ctx);
+        pi.sendMessage({ customType: 'forgeflow-lane-handoff', display: true, details: prepared, content: renderHandoff(prepared) }, { triggerTurn: false });
       } catch (error) { ctx.ui.notify(message(error), 'error'); }
     },
   });

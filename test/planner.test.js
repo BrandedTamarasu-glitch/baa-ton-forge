@@ -63,12 +63,12 @@ test('Pi command handles paths with spaces and only displays a preview without a
     await writeFile(path.join(dir, 'my brief.json'), JSON.stringify(brief([task('a', ['a'])])));
     let command;
     const messages = [], errors = [];
-    adapter({ registerCommand(name, definition) { if (name === 'forgeflow-plan-lanes') command = definition; }, sendMessage(...args) { messages.push(args); } });
+    adapter({ appendEntry() {}, registerCommand(name, definition) { if (name === 'forgeflow-plan-lanes') command = definition; }, sendMessage(...args) { messages.push(args); } });
     const ctx = { cwd: dir, ui: { notify: (...args) => errors.push(args) } };
     await command.handler('"my brief.json"', ctx);
     assert.equal(errors.length, 0);
     assert.equal(messages.length, 1);
-    adapter({ registerCommand(name, definition) { if (name === 'forgeflow-plan-lanes') command = definition; }, sendMessage() { throw 'message delivery failed'; } });
+    adapter({ appendEntry() {}, registerCommand(name, definition) { if (name === 'forgeflow-plan-lanes') command = definition; }, sendMessage() { throw 'message delivery failed'; } });
     await command.handler('my brief.json', ctx);
     assert.deepEqual(errors.at(-1), ['message delivery failed', 'error']);
     assert.deepEqual(messages[0][1], { triggerTurn: false });

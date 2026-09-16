@@ -189,3 +189,44 @@ test('native tools save reconciliation and verification through the live extensi
   assert.equal(entries[1].data.commit, check.commit);
   assert.match(verified.content[0].text, /Saved verified record/);
 });
+
+test('native preview and prepare persist across reload, share command behavior, and reject stale input', async t => {
+  const f = await fixture(t);
+  const saved = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]));
+  Object.assign(process.env, env);
+  t.after(() => { for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
+  const tools = new Map(), commands = new Map(), entries = [], messages = [], errors = [];
+  const api = {
+    registerCommand: (name, command) => commands.set(name, command),
+    registerTool: tool => tools.set(tool.name, tool),
+    appendEntry: (customType, data) => entries.push({ type: 'custom', customType, data }),
+    sendMessage: (msg, options) => messages.push({ msg, options }),
+  };
+  const ctx = { cwd: f.root, sessionManager: { getBranch: () => entries }, ui: { notify: (...args) => errors.push(args) } };
+  adapter(api);
+  const params = { filename: path.relative(f.root, f.filename), taskId: f.taskId };
+  const execute = (name, args) => tools.get(name).execute('call', args, undefined, undefined, ctx);
+  await assert.rejects(execute('forgeflow_prepare_lane', params), /forgeflow-plan-lanes/);
+  assert.equal(entries.length, 0);
+  const result = await execute('forgeflow_plan_lanes', { filename: params.filename });
+  assert.equal(result.details.mode, 'preview-only');
+  assert.match(result.content[0].text, /Preview only/);
+  assert.equal(entries.at(-1).data.kind, 'preview');
+  adapter(api); // fresh extension instance reads the existing session branch
+  const prepared = await execute('forgeflow_prepare_lane', params);
+  assert.equal(prepared.details.kind, 'prepared');
+  assert.equal(entries.at(-1).data.kind, 'prepared');
+  assert.equal(prepared.details.planArguments.worktreeCwd, f.target);
+  assert.match(prepared.content[0].text, /Dispatch remains a separate explicit action/);
+  assert.equal(messages.length, 0); // native tools return results, without injecting a turn
+  await commands.get('forgeflow-prepare-lane').handler(`"${f.filename}" ${f.taskId}`, ctx);
+  assert.equal(errors.length, 0);
+  assert.deepEqual(messages[0].msg.details, prepared.details);
+  assert.equal(messages[0].options.triggerTurn, false);
+  const before = entries.length;
+  await writeFile(f.filename, (await readFile(f.filename, 'utf8')) + '\n');
+  await assert.rejects(execute('forgeflow_prepare_lane', params), /changed/);
+  assert.equal(entries.length, before);
+  assert.equal(git(f.root, 'status', '--porcelain'), '');
+  assert.equal(git(f.target, 'status', '--porcelain'), '');
+});
