@@ -60,6 +60,29 @@ export function matchPlan(prepared, event) {
   return event.toolName === 'herdr_plan' && isDeepStrictEqual(event.input, prepared.planArguments);
 }
 
+export async function reconcileLane({ filename, taskId, workflowId, cwd, sessionFile, env = process.env }) {
+  const pane = identity(env);
+  const root = await checkout(cwd);
+  const preview = await loadPreview(filename);
+  const proposed = preview.workflows.find(item => item.taskId === taskId)?.planArguments;
+  if (!proposed) throw new Error('Brief has no plannable task with that ID');
+  const target = await checkout(proposed.worktreeCwd ?? cwd);
+  if (target.commonDir !== root.commonDir) throw new Error('Target belongs to a different repository');
+  const manifest = JSON.parse(await readFile(path.join(root.root, '.pi/herdr-orchestrator/manifest.json'), 'utf8'));
+  const matches = manifest.workflows?.filter(workflow => workflow.id === workflowId) ?? [];
+  if (matches.length !== 1) throw new Error('Expected exactly one durable workflow with that ID');
+  const workflow = matches[0];
+  const binding = workflow.taskBinding;
+  if (!sessionFile || binding?.rootSessionPath !== sessionFile || binding?.workspaceId !== pane.workspaceId || binding?.rootPaneId !== pane.paneId) throw new Error('Workflow belongs to another root session, pane, or workspace');
+  if (workflow.cwd !== target.root || workflow.objective !== proposed.objective || workflow.lanes?.length !== proposed.lanes.length) throw new Error('Workflow does not match the brief objective, checkout, or lane count');
+  for (let i = 0; i < proposed.lanes.length; i++) {
+    const expected = proposed.lanes[i], actual = workflow.lanes[i];
+    if (actual.objective !== expected.objective || actual.readOnly !== expected.readOnly || actual.agentKind !== expected.agentKind || !isDeepStrictEqual(actual.launchProfile, expected.launchProfile) || (actual.dependencies?.length ?? 0) !== 0) throw new Error('Workflow lane does not match the brief scope, profile, or dependencies');
+  }
+  if (!proposed.lanes[0].readOnly && (!target.linked || target.root === root.root || workflow.worktreeBinding?.repoParent?.checkoutPath !== root.root || workflow.worktreeBinding?.repoParent?.workspaceId !== pane.workspaceId)) throw new Error('Writer workflow has no matching linked-worktree parent binding');
+  return { kind: 'planned', taskId, sourcePath: preview.sourcePath, sourceSha256: preview.sourceSha256, root: root.root, target: target.root, ...pane, workflowId, planArguments: proposed, reconciledAt: new Date().toISOString(), mappingSource: 'durable-manifest' };
+}
+
 export async function verifyLane({ mapped, commit, evidence, cwd }) {
   if (!evidence?.trim()) throw new Error('Supply the checks independently rerun and their results');
   const root = await checkout(cwd);

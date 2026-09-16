@@ -90,11 +90,26 @@ Baa-ton's live qualification. Environment presence alone does not attest a root.
 
 Preview hashes, preparations and workflow mappings live as custom entries in
 Pi's local session branch. They survive reload and resume of that branch. A new
-session does not import them automatically. Interrupted or failed submissions
+session does not import them automatically. Run slash commands directly in Pi;
+calling `prepareLane()` in a shell only calculates a result and does not register
+a preparation or workflow mapping. Interrupted or failed submissions
 remain blocked for ledger inspection rather than automatically retrying an
-operation that may already have created a workflow. Automated reconciliation is
-not yet implemented. Independently issued native Baa-ton calls are not globally
+operation that may already have created a workflow. Independently issued native Baa-ton calls are not globally
 intercepted: this is an adapter handoff guard, not an authorization boundary.
+
+If a successful native plan has no mapping, recover it in the original Pi root:
+
+```text
+/forgeflow-reconcile-lane "/absolute/path/to/brief.md" task-id herdr-workflow-id
+```
+
+Recovery reads the durable manifest and requires exact agreement on root session,
+pane/workspace, repository, target, objective, lane scope, profile and writer
+parent binding. It rejects conflicting existing mappings and is idempotent.
+It does not dispatch, mark verified, or change Baa-ton state. The recorded hash
+associates the current matching brief; it does not assert a historical preparation
+hash or reconstruct missing original checkout HEADs. Resuming another root session
+or relocating the worktree requires a separate recovery design.
 
 After completion, independently rerun checks and inspect the lane changes. Once
 the reviewed commit is integrated into the root with authorization, record it:

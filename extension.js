@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { loadPreview, renderPreview } from './planner.js';
-import { prepareLane, revalidate, matchPlan, verifyLane } from './prepare.js';
+import { prepareLane, revalidate, matchPlan, verifyLane, reconcileLane } from './prepare.js';
 
 const ENTRY = 'forgeflow-adapter';
 const message = error => error instanceof Error ? error.message : String(error);
@@ -51,10 +51,24 @@ export default function adapter(pi) {
         const match = args.trim().match(/^(\S+)\s+([0-9a-f]{40,64})\s+([\s\S]+)$/);
         if (!match) throw new Error('Usage: /forgeflow-verify-lane workflow-id full-commit-hash checks-and-results');
         const mapped = records(ctx).findLast(item => item.kind === 'planned' && item.workflowId === match[1]);
-        if (!mapped) throw new Error('Workflow is not mapped in this root session');
+        if (!mapped) throw new Error('Workflow is not mapped in this root session; use /forgeflow-reconcile-lane with the original brief, task ID, and workflow ID');
         const verified = await verifyLane({ mapped, commit: match[2], evidence: match[3], cwd: ctx.cwd });
         pi.appendEntry(ENTRY, verified);
         ctx.ui.notify(`Recorded root verification for ${mapped.taskId}`, 'info');
+      } catch (error) { ctx.ui.notify(message(error), 'error'); }
+    },
+  });
+  pi.registerCommand('forgeflow-reconcile-lane', {
+    description: 'Recover a missing workflow mapping from the matching durable manifest',
+    handler: async (args, ctx) => {
+      try {
+        const match = args.trim().match(/^(.*?)\s+([a-z][a-z0-9-]*)\s+(herdr-[a-z0-9-]+)$/);
+        if (!match) throw new Error('Usage: /forgeflow-reconcile-lane "path/to/brief.md" task-id workflow-id');
+        const mapped = await reconcileLane({ filename: path.resolve(ctx.cwd, match[1].replace(/^"(.*)"$/, '$1')), taskId: match[2], workflowId: match[3], cwd: ctx.cwd, sessionFile: ctx.sessionManager.getSessionFile() });
+        const previous = records(ctx).filter(item => item.kind === 'planned' && (item.workflowId === mapped.workflowId || (item.root === mapped.root && item.sourcePath === mapped.sourcePath && item.taskId === mapped.taskId)));
+        if (previous.some(item => item.workflowId !== mapped.workflowId || item.taskId !== mapped.taskId || item.sourceSha256 !== mapped.sourceSha256 || item.sourcePath !== mapped.sourcePath)) throw new Error('Conflicting session mapping already exists; inspect it before reconciliation');
+        if (!previous.length) pi.appendEntry(ENTRY, mapped);
+        ctx.ui.notify(`Mapping confirmed: ${mapped.taskId} → ${mapped.workflowId}. Verification remains separate.`, 'info');
       } catch (error) { ctx.ui.notify(message(error), 'error'); }
     },
   });
@@ -74,7 +88,10 @@ export default function adapter(pi) {
   });
   pi.on?.('tool_result', (event, ctx) => {
     const prepared = pending.get(event.toolCallId);
-    if (!prepared) return;
+    if (!prepared) {
+      if (event.toolName === 'herdr_plan' && !event.isError && event.details?.workflow?.id) ctx.ui.notify('Native plan has no adapter mapping. Use /forgeflow-reconcile-lane if this plan belongs to an adapter brief. Run adapter slash commands directly in Pi, not through shell imports.', 'warning');
+      return;
+    }
     pending.delete(event.toolCallId);
     const workflow = event.details?.workflow;
     if (event.isError || !workflow?.id || workflow.cwd !== prepared.target) {

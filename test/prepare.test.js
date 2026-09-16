@@ -5,7 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { loadPreview } from '../planner.js';
-import { prepareLane, revalidate, verifyLane } from '../prepare.js';
+import { prepareLane, revalidate, verifyLane, reconcileLane } from '../prepare.js';
 import adapter from '../extension.js';
 
 const env = { HERDR_ENV: '1', HERDR_PANE_ID: 'test:p1', HERDR_WORKSPACE_ID: 'test' };
@@ -107,4 +107,61 @@ test('extension records exact successful plan mapping and blocks changed argumen
   events.get('tool_result')({ ...event, details: { workflow: { id: 'herdr-test', cwd: f.target } } }, ctx);
   assert.equal(entries.at(-1).data.workflowId, 'herdr-test');
   assert.equal((await events.get('tool_call')(event, ctx)).block, true);
+});
+
+async function recoveryFixture(t) {
+  const f = await fixture(t);
+  const prepared = await prepareLane(f);
+  const sessionFile = path.join(f.root, 'original-session.jsonl');
+  const workflow = { id: 'herdr-recover', objective: prepared.planArguments.objective, cwd: f.target, lanes: structuredClone(prepared.planArguments.lanes), taskBinding: { rootSessionPath: sessionFile, workspaceId: env.HERDR_WORKSPACE_ID, rootPaneId: env.HERDR_PANE_ID }, worktreeBinding: { repoParent: { checkoutPath: f.root, workspaceId: env.HERDR_WORKSPACE_ID } } };
+  const dir = path.join(f.root, '.pi/herdr-orchestrator');
+  await mkdir(dir, { recursive: true });
+  const save = () => writeFile(path.join(dir, 'manifest.json'), JSON.stringify({ workflows: [workflow] }));
+  await save();
+  return { ...f, workflow, save, sessionFile, workflowId: workflow.id };
+}
+
+test('reconciliation restores only a mapping, without inventing preparation or verification', async t => {
+  const f = await recoveryFixture(t);
+  const mapped = await reconcileLane(f);
+  assert.equal(mapped.workflowId, f.workflowId);
+  assert.equal(mapped.kind, 'planned');
+  assert.equal(mapped.mappingSource, 'durable-manifest');
+  assert.equal('targetHead' in mapped, false);
+  assert.equal('verifiedAt' in mapped, false);
+  assert.equal('commit' in mapped, false);
+});
+
+test('reconciliation rejects foreign roots and mismatched lane evidence', async t => {
+  const f = await recoveryFixture(t);
+  await assert.rejects(reconcileLane({ ...f, sessionFile: 'another-session' }), /another root/);
+  await assert.rejects(reconcileLane({ ...f, env: { ...env, HERDR_WORKSPACE_ID: 'another' } }), /another root/);
+  await assert.rejects(reconcileLane({ ...f, workflowId: 'herdr-missing' }), /exactly one/);
+  const original = structuredClone(f.workflow);
+  for (const change of [w => { w.objective = 'different'; }, w => { w.lanes[0].objective += '\nwrite elsewhere'; }, w => { w.lanes[0].readOnly = true; }, w => { w.lanes[0].launchProfile = { model: 'other' }; }, w => { w.worktreeBinding.repoParent.checkoutPath = f.target; }]) {
+    Object.assign(f.workflow, structuredClone(original));
+    change(f.workflow);
+    await f.save();
+    await assert.rejects(reconcileLane(f), /does not match|no matching/);
+  }
+});
+
+test('reconcile command persists idempotently and rejects conflicting mappings', async t => {
+  const f = await recoveryFixture(t);
+  const saved = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]));
+  Object.assign(process.env, env);
+  t.after(() => { for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
+  const commands = new Map(), entries = [], notifications = [];
+  adapter({ registerCommand: (name, command) => commands.set(name, command), appendEntry: (customType, data) => entries.push({ type: 'custom', customType, data }) });
+  const ctx = { cwd: f.root, sessionManager: { getBranch: () => entries, getSessionFile: () => f.sessionFile }, ui: { notify: (...args) => notifications.push(args) } };
+  const command = commands.get('forgeflow-reconcile-lane');
+  const args = `"${f.filename}" writer ${f.workflowId}`;
+  await command.handler(args, ctx);
+  await command.handler(args, ctx);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].data.workflowId, f.workflowId);
+  entries[0].data.workflowId = 'herdr-conflicting';
+  await command.handler(args, ctx);
+  assert.match(notifications.at(-1)[0], /Conflicting/);
+  assert.equal(entries.length, 1);
 });
