@@ -165,3 +165,27 @@ test('reconcile command persists idempotently and rejects conflicting mappings',
   assert.match(notifications.at(-1)[0], /Conflicting/);
   assert.equal(entries.length, 1);
 });
+
+test('native tools save reconciliation and verification through the live extension API', async t => {
+  const f = await recoveryFixture(t);
+  f.workflow.lanes[0].completionReceipt = { id: 'receipt', summary: 'Completed and checked', delivery: 'delivered' };
+  await f.save();
+  const saved = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]));
+  Object.assign(process.env, env);
+  t.after(() => { for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
+  const tools = new Map(), entries = [];
+  adapter({ registerCommand() {}, registerTool: tool => tools.set(tool.name, tool), appendEntry: (customType, data) => entries.push({ type: 'custom', customType, data }) });
+  const ctx = { cwd: f.root, sessionManager: { getBranch: () => entries, getSessionFile: () => f.sessionFile } };
+  const reconcile = tools.get('forgeflow_reconcile_lane');
+  const verify = tools.get('forgeflow_verify_lane');
+  const check = { workflowId: f.workflowId, commit: git(f.target, 'rev-parse', 'HEAD'), evidence: 'Independently checked text: pass' };
+  await assert.rejects(verify.execute('before', check, undefined, undefined, ctx), /not mapped/);
+  const mapped = await reconcile.execute('reconcile', { filename: f.filename, taskId: f.taskId, workflowId: f.workflowId }, undefined, undefined, ctx);
+  assert.equal(mapped.details.kind, 'planned');
+  assert.equal(entries.length, 1);
+  const verified = await verify.execute('verify', check, undefined, undefined, ctx);
+  assert.equal(verified.details.kind, 'verified');
+  assert.equal(entries.length, 2);
+  assert.equal(entries[1].data.commit, check.commit);
+  assert.match(verified.content[0].text, /Saved verified record/);
+});

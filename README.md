@@ -68,6 +68,13 @@ need root review. Scope instructions do not provide filesystem isolation.
 
 ## Prepare and record a lane
 
+Reconciliation and verification are also native model-callable tools:
+`forgeflow_reconcile_lane(filename, taskId, workflowId)` and
+`forgeflow_verify_lane(workflowId, commit, evidence)`. When asking the Pi agent
+to perform these operations, name these tools. They execute within the live
+extension and persist session entries; shell imports only return calculations.
+The slash commands below remain available for direct user input.
+
 In the registered Pi root, preview the real brief, then prepare one lane:
 
 ```text
