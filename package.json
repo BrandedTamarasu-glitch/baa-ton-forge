@@ -1,0 +1,10 @@
+{
+  "name": "baa-ton-forge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local Forgeflow brief previews for Baa-ton",
+  "pi": { "extensions": ["./extension.js"] },
+  "scripts": { "test": "node --test", "preview": "node cli.js" },
+  "engines": { "node": ">=20" }
+}
