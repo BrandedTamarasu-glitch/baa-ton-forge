@@ -66,11 +66,52 @@ need root review. Scope instructions do not provide filesystem isolation.
 - Preview includes a source SHA-256. Regenerate after brief changes; it does not
   establish checkout freshness or validate the actual code state.
 
-This adapter does not execute checks, create worktrees, call Baa-ton tools,
-change workflow ledgers, merge code, or ingest receipts. Proposed tool arguments
-must pass Baa-ton's own live guards. No full Forgeflow workflows are imported.
+## Prepare and record a lane
 
-Next increments: approved plan handoff through the root, checkout-bound receipt
-mapping, independent verification, then local task-history updates. Preserve
-each system's ledger and keep generated state local. Use Git local exclusions
-for `.forgeflow/` and `.pi/herdr-orchestrator/` in target repositories.
+In the registered Pi root, preview the real brief, then prepare one lane:
+
+```text
+/forgeflow-plan-lanes "/absolute/path/to/brief.md"
+/forgeflow-prepare-lane "/absolute/path/to/brief.md" task-id
+```
+
+Prepare requires Herdr environment identity, the same brief hash as the last
+preview in this session branch, clean committed checkouts, and for writers a
+distinct linked worktree in the root repository. Both root and target must be
+checkout roots. A read-only lane without `worktreeCwd` reviews the root checkout.
+The target's paths are interpreted in that checkout, not relative to the brief.
+
+The command displays exact tool arguments without starting a model turn. Ask the
+root to check Baa-ton readiness and call `herdr_plan` with those arguments. Before
+that matching call, the adapter rechecks the brief, Git state and pane identity.
+It records submission before execution and captures a successful workflow ID
+from the tool result. Dispatch still needs a separate explicit root action and
+Baa-ton's live qualification. Environment presence alone does not attest a root.
+
+Preview hashes, preparations and workflow mappings live as custom entries in
+Pi's local session branch. They survive reload and resume of that branch. A new
+session does not import them automatically. Interrupted or failed submissions
+remain blocked for ledger inspection rather than automatically retrying an
+operation that may already have created a workflow. Automated reconciliation is
+not yet implemented. Independently issued native Baa-ton calls are not globally
+intercepted: this is an adapter handoff guard, not an authorization boundary.
+
+After completion, independently rerun checks and inspect the lane changes. Once
+the reviewed commit is integrated into the root with authorization, record it:
+
+```text
+/forgeflow-verify-lane herdr-id FULL_COMMIT_HASH checks independently rerun and results
+```
+
+This requires matching durable completion receipts, a clean lane checkout at
+that commit, and commit ancestry in the root. Evidence text is the root's
+explicit attestation; the adapter does not run checks or validate prose claims.
+Dependent preparation requires a verification record for the same brief and
+requires the verified commit to be an ancestor of both root and target HEAD.
+Use an ancestry-preserving integration for this version; squashed/rebased
+equivalents are not inferred. A later lane checkout change invalidates verification
+of an earlier lane HEAD. Prepare dependent worktrees after integrating changes.
+
+The adapter never creates worktrees, calls Baa-ton tools itself, changes Baa-ton
+ledgers, or merges code. Preserve each system's ledger and keep generated state
+local. Use Git local exclusions for `.forgeflow/` and `.pi/herdr-orchestrator/`.

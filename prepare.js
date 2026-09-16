@@ -1,0 +1,74 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { realpath, readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
+import { loadPreview } from './planner.js';
+
+const exec = promisify(execFile);
+async function git(cwd, ...args) {
+  return (await exec('git', ['-C', cwd, ...args], { maxBuffer: 1024 * 1024 })).stdout.trim();
+}
+export async function checkout(cwd) {
+  const canonical = await realpath(cwd);
+  const root = await realpath(await git(canonical, 'rev-parse', '--show-toplevel'));
+  if (canonical !== root) throw new Error('Use the checkout root, not a subdirectory');
+  if (await git(root, 'status', '--porcelain', '--untracked-files=all')) throw new Error(`Checkout is dirty: ${root}`);
+  const head = await git(root, 'rev-parse', '--verify', 'HEAD');
+  const commonDir = await realpath(await git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir'));
+  const gitDir = await realpath(await git(root, 'rev-parse', '--absolute-git-dir'));
+  return { root, head, commonDir, linked: commonDir !== gitDir };
+}
+export function identity(env = process.env) {
+  if (env.HERDR_ENV !== '1' || !env.HERDR_PANE_ID || !env.HERDR_WORKSPACE_ID) throw new Error('Prepare requires a real Herdr pane with pane and workspace identity');
+  return { paneId: env.HERDR_PANE_ID, workspaceId: env.HERDR_WORKSPACE_ID };
+}
+async function ancestor(cwd, commit) {
+  if (!/^[0-9a-f]{40,64}$/.test(commit ?? '')) throw new Error('Verification requires a full commit hash');
+  try { await git(cwd, 'merge-base', '--is-ancestor', commit, 'HEAD'); }
+  catch { throw new Error(`Verified commit ${commit} is not integrated in ${cwd}`); }
+}
+
+export async function prepareLane({ filename, taskId, preview, cwd, records = [], env = process.env }) {
+  const pane = identity(env);
+  const current = await loadPreview(filename);
+  if (!preview || preview.sourcePath !== current.sourcePath || preview.sourceSha256 !== current.sourceSha256) throw new Error('Brief is new or changed; run /forgeflow-plan-lanes again before preparing');
+  const workflow = current.workflows.find(item => item.taskId === taskId);
+  if (!workflow) throw new Error(`Unknown task: ${taskId}`);
+  if (!workflow.planArguments) throw new Error('Assign the writer worktree, then preview again');
+  const root = await checkout(cwd);
+  const target = await checkout(workflow.planArguments.worktreeCwd ?? cwd);
+  if (target.commonDir !== root.commonDir) throw new Error('Target belongs to a different repository than the root');
+  if (!workflow.readOnly && (!target.linked || target.root === root.root)) throw new Error('Writer requires a distinct linked worktree');
+  for (const dependency of workflow.afterVerifiedAndIntegrated) {
+    const record = records.findLast(item => item.kind === 'verified' && item.taskId === dependency && item.sourceSha256 === current.sourceSha256 && item.sourcePath === current.sourcePath && item.root === root.root);
+    if (!record) throw new Error(`Dependency ${dependency} has no root verification record for this brief`);
+    await ancestor(root.root, record.commit);
+    await ancestor(target.root, record.commit);
+  }
+  const previous = records.findLast(item => ['planned', 'planning'].includes(item.kind) && item.taskId === taskId && item.sourcePath === current.sourcePath && item.sourceSha256 === current.sourceSha256 && item.root === root.root);
+  if (previous) throw new Error(`Task already mapped or submitted (${previous.workflowId ?? previous.toolCallId}); inspect the Baa-ton ledger instead of replanning`);
+  return { kind: 'prepared', taskId, sourcePath: current.sourcePath, sourceSha256: current.sourceSha256, root: root.root, rootHead: root.head, target: target.root, targetHead: target.head, ...pane, planArguments: workflow.planArguments };
+}
+
+export async function revalidate(prepared, records, env = process.env) {
+  const current = await prepareLane({ filename: prepared.sourcePath, taskId: prepared.taskId, preview: prepared, cwd: prepared.root, records, env });
+  if (!isDeepStrictEqual(current, prepared)) throw new Error('Checkout or pane changed since prepare; prepare the lane again');
+}
+
+export function matchPlan(prepared, event) {
+  return event.toolName === 'herdr_plan' && isDeepStrictEqual(event.input, prepared.planArguments);
+}
+
+export async function verifyLane({ mapped, commit, evidence, cwd }) {
+  if (!evidence?.trim()) throw new Error('Supply the checks independently rerun and their results');
+  const root = await checkout(cwd);
+  if (root.root !== mapped.root) throw new Error('Verification must run in the mapped root checkout');
+  const manifest = JSON.parse(await readFile(path.join(root.root, '.pi/herdr-orchestrator/manifest.json'), 'utf8'));
+  const workflow = manifest.workflows?.find(item => item.id === mapped.workflowId);
+  if (!workflow || workflow.cwd !== mapped.target || !workflow.lanes?.length || workflow.lanes.some(lane => !lane.completionReceipt?.id || !lane.completionReceipt?.summary)) throw new Error('Matching durable lane completion receipts are required before root verification');
+  const target = await checkout(mapped.target);
+  if (target.head !== commit) throw new Error('Commit must match the reviewed lane checkout HEAD');
+  await ancestor(root.root, commit);
+  return { ...mapped, kind: 'verified', commit, evidence: evidence.trim(), verifiedAt: new Date().toISOString() };
+}
