@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { readFile } from 'node:fs/promises';
 
-const usage = 'Usage: node cli.js [--json] <brief.md|brief.json>';
+const usage = 'Usage: node cli.js [--json] [-v|--version] <brief.md|brief.json>';
 const args = process.argv.slice(2);
 const json = args[0] === '--json';
 if (json) args.shift();
@@ -13,7 +13,7 @@ async function packageVersion() {
 
 if (args.length === 1 && args[0] === '--help') {
   console.log(usage);
-} else if (args.length === 1 && args[0] === '--version') {
+} else if (args.length === 1 && (args[0] === '--version' || args[0] === '-v')) {
   console.log(await packageVersion());
 } else if (args.length !== 1 || args[0].startsWith('--')) {
   console.error(usage);
