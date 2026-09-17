@@ -80,6 +80,10 @@ shell imports or mock APIs.
 ## 4. Preview before dispatch
 
 Create a project-specific brief using [the brief contract](README.md#brief-contract).
+Include an explicit `launchProfile` on each task, including read-only tasks.
+Preparation rejects missing profiles before creating a workflow; preview alone
+does not establish dispatch readiness. Use the provider/model authorized for this
+project rather than copying another project's selection.
 Run `/forgeflow-status ".forgeflow/brief.json"` first. For a new project, missing
 workflow records or a missing manifest may be expected; they do not prove that
 registration succeeded or that no workflows exist elsewhere.

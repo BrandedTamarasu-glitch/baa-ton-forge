@@ -36,6 +36,11 @@ export async function prepareLane({ filename, taskId, preview, cwd, records = []
   const workflow = current.workflows.find(item => item.taskId === taskId);
   if (!workflow) throw new Error(`Unknown task: ${taskId}`);
   if (!workflow.planArguments) throw new Error('Assign the writer worktree, then preview again');
+  // Baa-ton dispatch mandates an explicit launch profile with no substitution;
+  // reject here so no profile-less workflow is ever created and then stranded.
+  for (const lane of workflow.planArguments.lanes) {
+    if (!lane.launchProfile) throw new Error(`Task ${taskId} has no launchProfile; add one to the brief task before preparing`);
+  }
   const root = await checkout(cwd);
   const target = await checkout(workflow.planArguments.worktreeCwd ?? cwd);
   if (target.commonDir !== root.commonDir) throw new Error('Target belongs to a different repository than the root');

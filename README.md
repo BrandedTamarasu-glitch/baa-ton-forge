@@ -40,6 +40,10 @@ nonempty `checks`. Optional fields: `dependsOn`, `readOnly`, `agentKind`,
 `worktreeCwd`, and `launchProfile` with `provider`, `model`, `thinking`, and
 `auth: "subscription"`. Profiles are passed unchanged; runtime qualification
 belongs to Baa-ton. Missing profiles are not guessed.
+Profiles may be omitted for preview, but preparation requires an explicit
+`launchProfile` for every lane, including read-only reviews. Add the intended
+provider, model, thinking level and subscription auth to the task before planning;
+dispatch cannot supply a missing profile later.
 
 This version accepts the four kinds with launch adapters in the installed
 Baa-ton: `pi`, `claude`, `codex`, and `opencode`. Baa-ton recognizes additional

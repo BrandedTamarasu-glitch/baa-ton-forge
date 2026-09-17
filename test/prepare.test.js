@@ -24,7 +24,8 @@ async function fixture(t) {
   git(root, 'worktree', 'add', '-b', 'writer', target);
   await writeFile(path.join(root, '.git/info/exclude'), '.pi/\n');
   const filename = path.join(base, 'brief.json');
-  const task = { id: 'writer', objective: 'Change text', files: ['source.txt'], checks: ['Inspect text'], worktreeCwd: target };
+  const profile = { provider: 'openai-codex', model: 'gpt-5.5', thinking: 'medium', auth: 'subscription' };
+  const task = { id: 'writer', objective: 'Change text', files: ['source.txt'], checks: ['Inspect text'], worktreeCwd: target, launchProfile: profile };
   const brief = { version: 1, objective: 'Trial', acceptance: ['Text is correct'], tasks: [task] };
   await writeFile(filename, JSON.stringify(brief));
   return { root, target, filename, brief, preview: await loadPreview(filename), cwd: root, taskId: 'writer', env };
@@ -56,9 +57,19 @@ test('rejects stale previews, missing identity, wrong writer checkout, and dupli
   await assert.rejects(prepareLane({ ...f, preview: await loadPreview(f.filename) }), /distinct linked/);
 });
 
+test('prepare rejects tasks without an explicit launch profile before any workflow exists', async t => {
+  const f = await fixture(t);
+  delete f.brief.tasks[0].launchProfile;
+  for (const readOnly of [false, true]) {
+    f.brief.tasks[0].readOnly = readOnly;
+    await writeFile(f.filename, JSON.stringify(f.brief));
+    await assert.rejects(prepareLane({ ...f, preview: await loadPreview(f.filename) }), /no launchProfile; add one to the brief task/);
+  }
+});
+
 test('dependencies require matching verification and commit ancestry in target', async t => {
   const f = await fixture(t);
-  f.brief.tasks.push({ id: 'review', objective: 'Review text', readOnly: true, files: ['source.txt'], checks: ['Inspect diff'] });
+  f.brief.tasks.push({ id: 'review', objective: 'Review text', readOnly: true, files: ['source.txt'], checks: ['Inspect diff'], launchProfile: f.brief.tasks[0].launchProfile });
   await writeFile(f.filename, JSON.stringify(f.brief));
   f.preview = await loadPreview(f.filename);
   await assert.rejects(prepareLane({ ...f, taskId: 'review' }), /no root verification/);
@@ -235,7 +246,7 @@ test('two writer lanes require verification, root integration, and an updated de
   const f = await fixture(t);
   const targetB = path.join(path.dirname(f.root), 'writer-b');
   git(f.root, 'worktree', 'add', '-b', 'writer-b', targetB);
-  f.brief.tasks.push({ id: 'writer-b', objective: 'Extend the first change', files: ['source.txt'], checks: ['Inspect both changes'], worktreeCwd: targetB, dependsOn: ['writer'] });
+  f.brief.tasks.push({ id: 'writer-b', objective: 'Extend the first change', files: ['source.txt'], checks: ['Inspect both changes'], worktreeCwd: targetB, dependsOn: ['writer'], launchProfile: f.brief.tasks[0].launchProfile });
   await writeFile(f.filename, JSON.stringify(f.brief));
   f.preview = await loadPreview(f.filename);
   const mapped = { ...await prepareLane(f), kind: 'planned', workflowId: 'herdr-first' };
