@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +29,19 @@ test('--help exits 0 and prints usage without reading a brief', async () => {
     const result = await runCli(['--help'], { cwd: dir });
     assert.equal(result.code, 0);
     assert.match(result.stdout, /Usage: node cli\.js \[--json\] <brief\.md\|brief\.json>/);
+    assert.equal(result.stderr, '');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('--version exits 0 and prints package version without reading a brief', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'cli version '));
+  try {
+    const { version } = JSON.parse(await readFile(path.resolve('package.json'), 'utf8'));
+    const result = await runCli(['--version'], { cwd: dir });
+    assert.equal(result.code, 0);
+    assert.equal(result.stdout, `${version}\n`);
     assert.equal(result.stderr, '');
   } finally {
     await rm(dir, { recursive: true, force: true });
