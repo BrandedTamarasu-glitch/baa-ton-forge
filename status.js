@@ -48,7 +48,7 @@ export async function laneStatus({ filename, cwd, records = [], sessionFile, env
     const candidates = mapped ? workflows.filter(workflow => workflow.id === mapped.workflowId) : workflows.filter(workflow => matchesTask(workflow, task, root));
     const workflow = candidates.length === 1 ? candidates[0] : undefined;
     const binding = workflow?.taskBinding;
-    const owner = binding ? { root: workflow.worktreeBinding?.repoParent?.checkoutPath ?? root, sessionFile: binding.rootSessionPath ?? null, paneId: binding.rootPaneId ?? null, workspaceId: binding.workspaceId ?? null } : mapped || prepared || submitted ? { root, sessionFile: null, paneId: (mapped ?? prepared ?? submitted).paneId ?? null, workspaceId: (mapped ?? prepared ?? submitted).workspaceId ?? null } : null;
+    const owner = binding ? { root, sessionFile: binding.rootSessionPath ?? null, paneId: binding.rootPaneId ?? null, workspaceId: binding.workspaceId ?? null } : mapped || prepared || submitted ? { root, sessionFile: null, paneId: (mapped ?? prepared ?? submitted).paneId ?? null, workspaceId: (mapped ?? prepared ?? submitted).workspaceId ?? null } : null;
     const receipts = workflow?.lanes?.filter(lane => lane.completionReceipt?.id && lane.completionReceipt?.summary).length ?? 0;
     const complete = Boolean(workflow?.lanes?.length && receipts === workflow.lanes.length);
     const blockers = [];
@@ -68,7 +68,7 @@ export async function laneStatus({ filename, cwd, records = [], sessionFile, env
         blockers.push(error.message);
       }
     }
-    tasks.push({ taskId: task.taskId, state: verified ? 'verified' : mapped ? complete ? 'completed-unverified' : 'mapped' : candidates.length ? 'unmapped-workflow' : submitted ? 'submitted-unmapped' : prepared ? 'prepared' : 'untracked', workflowId: mapped?.workflowId ?? workflow?.id ?? null, candidateWorkflowIds: candidates.map(item => item.id), owner, workflowStatus: workflow?.status ?? null, completionReceipts: receipts, verification: verified ? { commit: verified.commit, evidence: verified.evidence, verifiedAt: verified.verifiedAt } : null, dependencies: task.afterVerifiedAndIntegrated, prepareCheck, blockers });
+    tasks.push({ taskId: task.taskId, repoCwd: task.repoCwd ?? root, state: verified ? 'verified' : mapped ? complete ? 'completed-unverified' : 'mapped' : candidates.length ? 'unmapped-workflow' : submitted ? 'submitted-unmapped' : prepared ? 'prepared' : 'untracked', workflowId: mapped?.workflowId ?? workflow?.id ?? null, candidateWorkflowIds: candidates.map(item => item.id), owner, workflowStatus: workflow?.status ?? null, completionReceipts: receipts, verification: verified ? { commit: verified.commit, evidence: verified.evidence, verifiedAt: verified.verifiedAt } : null, dependencies: task.afterVerifiedAndIntegrated, prepareCheck, blockers });
   }
   return { mode: 'read-only-status', current, sourcePath: preview.sourcePath, sourceSha256: preview.sourceSha256, manifestReadable, staleRecordCount, warnings, tasks };
 }
@@ -83,6 +83,7 @@ export function renderStatus(report) {
     ...report.warnings.map(warning => `Warning: ${warning}`), '',
     ...report.tasks.flatMap(task => [
       `${task.taskId}: ${task.state} | Workflow: ${task.workflowId ?? 'unmapped'}`,
+      `Repository: ${task.repoCwd}`,
       `Owner: ${task.owner ? `${task.owner.root} | ${task.owner.workspaceId ?? '?'} | ${task.owner.paneId ?? '?'} | ${task.owner.sessionFile ?? 'session unknown'}` : 'not established in this root'}`,
       `Baa-ton status: ${task.workflowStatus ?? 'unknown'} | Receipts: ${task.completionReceipts}`,
       `Verification: ${task.verification ? `${task.verification.commit} at ${task.verification.verifiedAt ?? 'unknown time'}` : 'not recorded for this brief in this session'}`,
