@@ -92,6 +92,32 @@ format demonstration, not a dispatch-ready task. Supply real project values
 before preparation. Shell commands above also work through `rtk proxy` if you
 use RTK; RTK is not an adapter dependency.
 
+## Update an existing installation
+
+In a clean clone of this repository:
+
+```sh
+git pull --ff-only
+npm test
+```
+
+There is no compilation or dependency-install step for this adapter. Keep Pi's
+registered `extension.js` path pointed at that checkout, then run `/reload` in
+each project root. If tools remain stale, restart Pi and resume the same session.
+Do not overwrite local modifications if the pull refuses to fast-forward.
+
+Named-profile support requires Baa-ton's project profile configuration:
+`.baa-ton/config.json` with version 1 and exact settings for the selected names.
+Update Baa-ton separately using its `baa-ton-update` skill, and use
+`baa-ton-configure` to select worker assignments. Updating this adapter does not
+update Baa-ton, replace configuration, migrate active workflows, or change the
+current root model. Existing explicit-profile briefs remain supported.
+
+Provider qualification is also separate. Named profiles do not remove provider
+restrictions in the installed Baa-ton launch adapter. A local Baa-ton patch that
+enables additional Pi OAuth providers is not distributed by this repository;
+check the installed Baa-ton version before expecting a new provider to dispatch.
+
 ## Validated behavior and current limits
 
 Local validation includes a dependent two-writer trial and a completed read-only
