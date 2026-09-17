@@ -230,3 +230,34 @@ test('native preview and prepare persist across reload, share command behavior, 
   assert.equal(git(f.root, 'status', '--porcelain'), '');
   assert.equal(git(f.target, 'status', '--porcelain'), '');
 });
+
+test('two writer lanes require verification, root integration, and an updated dependent checkout', async t => {
+  const f = await fixture(t);
+  const targetB = path.join(path.dirname(f.root), 'writer-b');
+  git(f.root, 'worktree', 'add', '-b', 'writer-b', targetB);
+  f.brief.tasks.push({ id: 'writer-b', objective: 'Extend the first change', files: ['source.txt'], checks: ['Inspect both changes'], worktreeCwd: targetB, dependsOn: ['writer'] });
+  await writeFile(f.filename, JSON.stringify(f.brief));
+  f.preview = await loadPreview(f.filename);
+  const mapped = { ...await prepareLane(f), kind: 'planned', workflowId: 'herdr-first' };
+  const prepareB = records => prepareLane({ ...f, taskId: 'writer-b', records });
+  await assert.rejects(prepareB([mapped]), /no root verification/);
+  await writeFile(path.join(f.target, 'source.txt'), 'first change');
+  git(f.target, 'add', 'source.txt'); git(f.target, 'commit', '-m', 'first change');
+  const commit = git(f.target, 'rev-parse', 'HEAD');
+  const manifestDir = path.join(f.root, '.pi/herdr-orchestrator');
+  await mkdir(manifestDir, { recursive: true });
+  await writeFile(path.join(manifestDir, 'manifest.json'), JSON.stringify({ workflows: [{ id: mapped.workflowId, cwd: f.target, lanes: [{ completionReceipt: { id: 'first-receipt', summary: 'First change complete', delivery: 'delivered' } }] }] }));
+  // Completion alone is insufficient, even with a real durable receipt.
+  await assert.rejects(prepareB([mapped]), /no root verification/);
+  const verification = { mapped, commit, evidence: 'Independently checked first change', cwd: f.root };
+  await assert.rejects(verifyLane(verification), /not integrated/);
+  git(f.root, 'merge', '--ff-only', commit);
+  const verified = await verifyLane(verification);
+  // Root integration and a verified record do not make a stale target usable.
+  await assert.rejects(prepareB([mapped, verified]), /not integrated/);
+  git(targetB, 'merge', '--ff-only', commit);
+  const preparedB = await prepareB([mapped, verified]);
+  assert.equal(preparedB.taskId, 'writer-b');
+  assert.equal(preparedB.targetHead, commit);
+  assert.equal(preparedB.rootHead, commit);
+});
