@@ -103,7 +103,9 @@ npm test
 
 There is no compilation or dependency-install step for this adapter. Keep Pi's
 registered `extension.js` path pointed at that checkout, then run `/reload` in
-each project root. If tools remain stale, restart Pi and resume the same session.
+each project root. If tools remain stale, restart Pi in the same Herdr pane and
+resume the same session. A new pane or workspace needs controller ownership
+recovery; reopening the transcript alone does not restore that identity.
 Do not overwrite local modifications if the pull refuses to fast-forward.
 
 Named-profile support requires Baa-ton's project profile configuration:
@@ -122,6 +124,13 @@ check the installed Baa-ton version before expecting a new provider to dispatch.
 
 Local validation includes a dependent two-writer trial and a completed read-only
 lane in a second project root, each with independently recorded verification.
+An additional live read-only trial exercised the configured native Claude Code
+review profile (`claude / claude-code / claude-sonnet-5 / high / subscription`)
+after failed-submission recovery and an audited Baa-ton root migration. The lane
+completed with a durable receipt; the root checked the findings against the
+README, corrected an unsafe reset-command recommendation, confirmed unchanged
+checkout/HEAD/README content, and saved native verification. This qualifies that
+tested profile and workflow, not every configured model or included billing.
 The automated suite covers preparation guards, dependency integration, recovery,
 status, installation checks and CLI behavior. Run `npm test` for the current suite.
 
@@ -220,7 +229,7 @@ need root review. Scope instructions do not provide filesystem isolation.
 
 ## Prepare and record a lane
 
-The adapter exposes five native model-callable tools:
+The adapter exposes six native model-callable tools:
 
 | Tool | Arguments | Result |
 | --- | --- | --- |
@@ -228,10 +237,11 @@ The adapter exposes five native model-callable tools:
 | `forgeflow_plan_lanes` | `filename` | Lane preview and saved brief hash |
 | `forgeflow_prepare_lane` | `filename`, `taskId` | Checked handoff and saved preparation |
 | `forgeflow_reconcile_lane` | `filename`, `taskId`, `workflowId` | Validated recovery of a missing mapping |
+| `forgeflow_recover_submission` | `filename`, `taskId` | Append evidence for a proven pre-persistence root rejection, allowing fresh preparation |
 | `forgeflow_verify_lane` | `workflowId`, `commit`, `evidence` | Saved root verification |
 
 When asking the Pi agent to perform these operations, name these tools. They
-execute within the live extension; the four planning/recording tools persist session entries. Shell imports
+execute within the live extension; the planning/recording tools persist session entries. Shell imports
 only return calculations. Preview and prepare do not call Baa-ton or dispatch.
 The slash commands below use the same implementations and remain available for
 direct user input. Relative brief paths resolve against the Pi root checkout.
@@ -256,7 +266,7 @@ checks, reporting the first failure. A passed check does not establish live
 Baa-ton readiness. Saved verification is historical evidence, not a fresh check
 of Git ancestry or tests. The slash command may leave a display message in Pi's
 session history but does not start a model turn. If a new tool is absent after
-`/reload`, restart Pi and resume the same owning root session.
+`/reload`, restart Pi in the same Herdr pane and resume the same owning root session.
 
 For a new task, ask Pi to call `forgeflow_plan_lanes` and then
 `forgeflow_prepare_lane` for the selected task. Review the handoff before asking
@@ -304,6 +314,36 @@ It does not dispatch, mark verified, or change Baa-ton state. The recorded hash
 associates the current matching brief; it does not assert a historical preparation
 hash or reconstruct missing original checkout HEADs. Resuming another root session
 or relocating the worktree requires a separate recovery design.
+
+### A rejected plan with no workflow
+
+If `herdr_plan` rejected a prepared task with exactly
+`Only the verified controller-mapped root may create or update the parent goal or queue.`,
+ask the **same Pi session branch and pane** to call the native
+`forgeflow_recover_submission` with `filename` and `taskId`.
+It reads the saved assistant tool call, unique failed native result, and original
+planning entry. The manifest's modification and change timestamps must predate
+the submission, and no matching workflow or saved mapping may exist.
+
+Use `/forgeflow-status` to confirm the session file before recovery. A new
+session in the correct project and pane still lacks the original planning
+records. Use `/resume` to select the original session; do not create another
+preview or plan to replace its missing history.
+
+This narrow path appends a `submission-no-effect` record with evidence hashes.
+It preserves the failed attempt and only releases that attempt's retry guard.
+It does not register a root or claim that a workflow completed. Missing results,
+different errors, a newer manifest, or ambiguous effects remain blocked; an
+existing durable workflow must use `forgeflow_reconcile_lane` instead.
+
+For a stale controller registration, run submission recovery **before** any
+root migration or other manifest mutation. Then use Baa-ton's native
+`herdr_recover_root` preview and explicitly authorized application if available
+in your installed version. This adapter does not implement root migration.
+After root recovery, run doctor, preview and prepare again. Do not change the
+brief hash, remove session records, or bootstrap with reset to evade a blocker.
+Historical verification stays historical; moving a root does not adopt another
+session's workflow verification.
 
 After completion, independently rerun checks and inspect the lane changes. Once
 the reviewed commit is integrated into the root with authorization, record it:
