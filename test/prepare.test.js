@@ -34,24 +34,29 @@ async function fixture(t) {
   return { root, target, filename, brief, preview: await loadPreview(filename), cwd: root, taskId: 'writer', env };
 }
 
-async function rejectedSubmission(t) {
+const recoveryCases = [
+  ['root', 'Only the verified controller-mapped root may create or update the parent goal or queue.', 'pre-persistence-root-rejection'],
+  ['source-workspace', 'Herdr worktree list response is missing source_workspace_id.', 'pre-persistence-source-workspace-rejection'],
+];
+
+async function rejectedSubmission(t, rejection = recoveryCases[0][1], matchingWorkflow = false) {
   const f = await fixture(t);
   const prepared = await prepareLane(f);
   const manifestPath = path.join(f.root, '.pi/herdr-orchestrator/manifest.json');
   await mkdir(path.dirname(manifestPath), { recursive: true });
-  await writeFile(manifestPath, JSON.stringify({ version: 2, workflows: [], parentGoal: { objective: 'unrelated history' } }));
+  await writeFile(manifestPath, JSON.stringify({ version: 2, workflows: matchingWorkflow ? [{ id: 'existing', objective: prepared.planArguments.objective }] : [], parentGoal: { objective: 'unrelated history' } }));
   await delay(10);
   const timestamp = new Date().toISOString(), toolCallId = 'native-plan-1';
   const entries = [
     { id: 'assistant', timestamp, type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', id: toolCallId, name: 'herdr_plan', arguments: prepared.planArguments }] } },
     { id: 'planning', timestamp, type: 'custom', customType: 'forgeflow-adapter', data: { ...prepared, kind: 'planning', toolCallId } },
-    { id: 'result', timestamp, type: 'message', message: { role: 'toolResult', toolName: 'herdr_plan', toolCallId, isError: true, content: [{ type: 'text', text: 'Only the verified controller-mapped root may create or update the parent goal or queue.' }] } },
+    { id: 'result', timestamp, type: 'message', message: { role: 'toolResult', toolName: 'herdr_plan', toolCallId, isError: true, content: [{ type: 'text', text: rejection }] } },
   ];
   return { ...f, entries, sessionFile: '/fixture/session.jsonl', prepared, manifestPath };
 }
 
-test('native recovery retains failed history across reload and permits only that attempt to retry', async t => {
-  const f = await rejectedSubmission(t), original = structuredClone(f.entries);
+for (const [kind, rejection, reason] of recoveryCases) test(`native ${kind} recovery retains failed history across reload and permits only that attempt to retry`, async t => {
+  const f = await rejectedSubmission(t, rejection), original = structuredClone(f.entries);
   const saved = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]));
   Object.assign(process.env, env);
   t.after(() => { for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
@@ -65,6 +70,7 @@ test('native recovery retains failed history across reload and permits only that
   await assert.rejects(prepareLane({ ...f, records: [f.entries[1].data] }), /already mapped/);
   const result = await reload().execute('recovery', { filename: f.filename, taskId: f.taskId }, undefined, undefined, ctx);
   assert.equal(result.details.kind, 'submission-no-effect');
+  assert.equal(result.details.evidence.reason, reason);
   assert.equal(result.details.evidence.resultEntryId, 'result');
   assert.deepEqual(f.entries.slice(0, 3), original);
   assert.equal(await readFile(f.manifestPath, 'utf8'), before);
@@ -87,8 +93,8 @@ test('native recovery retains failed history across reload and permits only that
   assert.match(blocked.reason, /prepare the lane again/);
 });
 
-test('recovery rejects ambiguous outcomes, missing native evidence, mismatched arguments and foreign identity', async t => {
-  const f = await rejectedSubmission(t);
+for (const [kind, rejection] of recoveryCases) test(`${kind} recovery rejects ambiguous outcomes, missing native evidence, mismatched arguments and foreign identity`, async t => {
+  const f = await rejectedSubmission(t, rejection);
   for (const change of [
     entries => { entries[2].message.isError = false; },
     entries => { entries[2].message.content[0].text = 'Database write failed'; },
@@ -107,6 +113,72 @@ test('recovery rejects ambiguous outcomes, missing native evidence, mismatched a
   await delay(5);
   await writeFile(f.manifestPath, JSON.stringify({ version: 2, workflows: [], parentGoal: { objective: 'partial write' } }));
   await assert.rejects(recoverSubmission(f), /Manifest changed since submission/);
+});
+
+test('source-workspace recovery rejects nearby errors, missing worktree binding and existing workflows', async t => {
+  const f = await rejectedSubmission(t, recoveryCases[1][1]);
+  for (const error of [
+    'Herdr worktree list response is missing repo_key.',
+    'Herdr worktree list response is missing source_workspace_id. Persistence failed.',
+    'workspace_not_found',
+  ]) {
+    const entries = structuredClone(f.entries);
+    entries[2].message.content[0].text = error;
+    await assert.rejects(recoverSubmission({ ...f, entries }), /exact supported/);
+  }
+  for (const target of [undefined, 'relative/worktree']) {
+    const entries = structuredClone(f.entries);
+    entries[0].message.content[0].arguments.worktreeCwd = target;
+    entries[1].data.planArguments.worktreeCwd = target;
+    await assert.rejects(recoverSubmission({ ...f, entries }), /explicit absolute worktreeCwd/);
+  }
+  const existing = await rejectedSubmission(t, recoveryCases[1][1], true);
+  await assert.rejects(recoverSubmission(existing), /matching durable workflow/);
+});
+
+test('newer root activity requires exact prior native workflow evidence, not just no matching plan', async t => {
+  const f = await rejectedSubmission(t, recoveryCases[1][1]);
+  const workflow = { id: 'old-workflow', objective: 'Completed earlier task', status: 'completed', lanes: [{ id: 'lane-1', completionReceipt: { id: 'receipt', summary: 'done' } }] };
+  const timestamp = new Date(Date.parse(f.entries[1].timestamp) - 1000).toISOString();
+  const history = [
+    { id: 'observe-call', timestamp, type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'observe-id', name: 'herdr_observe', arguments: { workflowId: workflow.id } }] } },
+    { id: 'observe-result', timestamp, type: 'message', message: { role: 'toolResult', toolName: 'herdr_observe', toolCallId: 'observe-id', isError: false, details: { workflow: structuredClone(workflow) } } },
+  ];
+  const manifest = { version: 2, workflows: [workflow], sessionLog: { kind: 'root', paneId: env.HERDR_PANE_ID, workspaceId: env.HERDR_WORKSPACE_ID,
+    sessionRef: { provider: 'pi', sessionId: f.sessionFile, nativeHandle: { kind: 'path', value: f.sessionFile } },
+    startedAt: timestamp, lastResponseAt: new Date().toISOString(), status: 'active' } };
+  await delay(5);
+  await writeFile(f.manifestPath, JSON.stringify(manifest));
+  const entries = [...history, ...f.entries], original = structuredClone(entries);
+  const before = await readFile(f.manifestPath, 'utf8');
+  const recovered = await recoverSubmission({ ...f, entries });
+  assert.equal(recovered.evidence.manifestProof, 'exact-pre-submission-native-observations');
+  assert.equal(recovered.evidence.observations[0].observationEntryId, 'observe-result');
+  assert.deepEqual(entries, original);
+  assert.equal(await readFile(f.manifestPath, 'utf8'), before);
+  for (const change of [
+    value => { value.workflows[0].lanes[0].completionReceipt.summary = 'changed'; },
+    value => { value.workflows.push({ id: 'new', objective: 'unrelated' }); },
+    value => { value.workflows = []; },
+    value => { value.parentGoal = { status: 'active' }; },
+    value => { value.sessionLog.paneId = 'foreign'; },
+    value => { value.sessionLog.newUnprovenField = true; },
+  ]) {
+    const changed = structuredClone(manifest); change(changed);
+    await writeFile(f.manifestPath, JSON.stringify(changed));
+    await assert.rejects(recoverSubmission({ ...f, entries }), /Manifest changed since submission/);
+  }
+  await writeFile(f.manifestPath, JSON.stringify(manifest));
+  for (const change of [
+    value => { value.shift(); },
+    value => { value[0].message.content[0].arguments.workflowId = 'foreign'; },
+    value => { value.splice(2, 0, structuredClone(value[1])); },
+    value => { value[1].timestamp = f.entries[1].timestamp; },
+    value => { value[1].message.isError = true; },
+  ]) {
+    const changed = structuredClone(entries); change(changed);
+    await assert.rejects(recoverSubmission({ ...f, entries: changed }), /Manifest changed since submission/);
+  }
 });
 
 test('prepare binds checkout and brief; revalidation detects dirty files, head and identity changes', async t => {
