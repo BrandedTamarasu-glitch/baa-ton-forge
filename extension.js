@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { loadPreview, renderPreview } from './planner.js';
 import { prepareLane, revalidate, matchPlan, verifyLane, reconcileLane } from './prepare.js';
+import { laneStatus, renderStatus } from './status.js';
 
 const ENTRY = 'forgeflow-adapter';
 const message = error => error instanceof Error ? error.message : String(error);
@@ -31,6 +32,9 @@ export default function adapter(pi) {
     pi.appendEntry(ENTRY, prepared);
     return prepared;
   }
+  async function status(params, ctx) {
+    return laneStatus({ filename: path.resolve(ctx.cwd, params.filename), cwd: ctx.cwd, records: records(ctx), sessionFile: ctx.sessionManager.getSessionFile() });
+  }
   async function reconcile(params, ctx) {
     const mapped = await reconcileLane({ filename: path.resolve(ctx.cwd, params.filename), taskId: params.taskId, workflowId: params.workflowId, cwd: ctx.cwd, sessionFile: ctx.sessionManager.getSessionFile() });
     const previous = records(ctx).filter(item => item.kind === 'planned' && (item.workflowId === mapped.workflowId || (item.root === mapped.root && item.sourcePath === mapped.sourcePath && item.taskId === mapped.taskId)));
@@ -46,6 +50,7 @@ export default function adapter(pi) {
     return verified;
   }
   for (const definition of [
+    { name: 'forgeflow_status', label: 'Show workflow status', fields: ['filename'], run: status, render: renderStatus, description: 'Read-only status for a brief: current root/session, owning pane/workspace, workflow IDs, durable receipts, saved verification and preparation blockers. Reads only this checkout manifest and current session branch. Does not scan other projects, save records, run tests, prepare or dispatch. Use to detect wrong-root context before acting.' },
     { name: 'forgeflow_plan_lanes', label: 'Preview workflow lanes', fields: ['filename'], run: preview, render: renderPreview, description: 'Preview a structured Forgeflow brief and save its hash in this live Pi session. Returns lane scopes, dependencies, blockers and proposed planning arguments. Does not call Baa-ton, create worktrees, run checks or dispatch. Use this tool before forgeflow_prepare_lane; shell imports do not save session records.' },
     { name: 'forgeflow_prepare_lane', label: 'Prepare workflow lane', fields: ['filename', 'taskId'], run: prepare, render: renderHandoff, description: 'Validate a previously previewed brief and persist a checked lane handoff in this live Pi session. Requires current Herdr identity, clean committed checkouts, a distinct linked worktree for writers, and verified integrated dependencies. Returns exact herdr_plan arguments; does not plan or dispatch. Call herdr_plan separately only under existing authorization.' },
     { name: 'forgeflow_reconcile_lane', label: 'Reconcile workflow mapping', fields: ['filename', 'taskId', 'workflowId'], run: reconcile, description: 'Persist a missing adapter mapping in this live Pi session after validating the durable Baa-ton workflow against the brief and root identity. Use this native tool, not shell imports of prepare.js; shell calls cannot save Pi session records. Does not dispatch or mark verified.' },
@@ -60,6 +65,17 @@ export default function adapter(pi) {
       },
     });
   }
+  pi.registerCommand('forgeflow-status', {
+    description: 'Read-only task, workflow, verification and root status for a brief',
+    handler: async (args, ctx) => {
+      try {
+        const filename = args.trim().replace(/^"(.*)"$/, '$1');
+        if (!filename) throw new Error('Usage: /forgeflow-status "path/to/brief.md"');
+        const result = await status({ filename }, ctx);
+        pi.sendMessage({ customType: 'forgeflow-status', content: renderStatus(result), display: true, details: result }, { triggerTurn: false });
+      } catch (error) { ctx.ui.notify(message(error), 'error'); }
+    },
+  });
   pi.registerCommand('forgeflow-plan-lanes', {
     description: 'Preview Baa-ton lanes from a Forgeflow brief; never dispatch',
     handler: async (args, ctx) => {

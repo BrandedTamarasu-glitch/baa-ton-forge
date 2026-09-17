@@ -68,20 +68,43 @@ need root review. Scope instructions do not provide filesystem isolation.
 
 ## Prepare and record a lane
 
-All four operations are native model-callable tools:
+The adapter exposes five native model-callable tools:
 
 | Tool | Arguments | Result |
 | --- | --- | --- |
+| `forgeflow_status` | `filename` | Read-only task, workflow, verification and owning-root snapshot |
 | `forgeflow_plan_lanes` | `filename` | Lane preview and saved brief hash |
 | `forgeflow_prepare_lane` | `filename`, `taskId` | Checked handoff and saved preparation |
 | `forgeflow_reconcile_lane` | `filename`, `taskId`, `workflowId` | Validated recovery of a missing mapping |
 | `forgeflow_verify_lane` | `workflowId`, `commit`, `evidence` | Saved root verification |
 
 When asking the Pi agent to perform these operations, name these tools. They
-execute within the live extension and persist session entries; shell imports
+execute within the live extension; the four planning/recording tools persist session entries. Shell imports
 only return calculations. Preview and prepare do not call Baa-ton or dispatch.
 The slash commands below use the same implementations and remain available for
 direct user input. Relative brief paths resolve against the Pi root checkout.
+
+Before acting in an unfamiliar session, use `forgeflow_status` or:
+
+```text
+/forgeflow-status "/absolute/path/to/brief.md"
+```
+
+Status reads this checkout's Baa-ton manifest and the current Pi session branch.
+It shows workflow IDs, owning sessions/panes/workspaces, completion receipts,
+saved verification, dependencies, and preparation blockers. A receipt is never
+reported as root verification. Changed brief hashes invalidate old records for
+this view. Missing records are not evidence that a task has never run; missing
+or ambiguous workflows require ledger inspection, not automatic redispatch.
+The tool does not scan other projects or import another session's records.
+
+Status does not save adapter records, dispatch, run tests, or change checkouts.
+For tasks without a mapping or submission it evaluates the read-only preparation
+checks, reporting the first failure. A passed check does not establish live
+Baa-ton readiness. Saved verification is historical evidence, not a fresh check
+of Git ancestry or tests. The slash command may leave a display message in Pi's
+session history but does not start a model turn. If a new tool is absent after
+`/reload`, restart Pi and resume the same owning root session.
 
 For a new task, ask Pi to call `forgeflow_plan_lanes` and then
 `forgeflow_prepare_lane` for the selected task. Review the handoff before asking
