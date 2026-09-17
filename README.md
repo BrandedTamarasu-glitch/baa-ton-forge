@@ -39,7 +39,7 @@ preparation and verification-record checks are not involved.
 - Requires resolved launch profiles, clean checkouts, and appropriate writer
   worktrees before preparing a lane.
 - Checks that dependency verification matches the brief and that verified commits
-  are integrated into both the root and the dependent checkout.
+  are integrated into their declared repository and any dependent checkout in that repository.
 - Saves workflow mappings and root verification in the active Pi session branch.
 - Recovers missing mappings from matching durable Baa-ton manifests.
 - Shows task status, owning roots, completion receipts, and preparation blockers.
@@ -50,7 +50,8 @@ development checkout does not need to control other projects.
 ## Install and preview
 
 Requires Node.js 20+. Preview, local checks, and tests use Node's standard library
-with no dependency installation. Live use additionally requires Git, Pi,
+with no dependency installation. Explicit repository previews also require Git and existing
+checkouts to resolve repository identity. Live use additionally requires Pi,
 Herdr/Baa-ton, and the Forgeflow guidance/skills you intend to apply. The adapter
 does not install those tools or manage provider login.
 
@@ -152,7 +153,7 @@ requirements in the block's objectives and acceptance criteria.
 Required top-level fields: `version: 1`, `objective`, nonempty `acceptance`, and
 `tasks`. Each task requires a unique `id`, `objective`, nonempty `files`, and
 nonempty `checks`. Optional fields: `dependsOn`, `readOnly`, `agentKind`,
-`worktreeCwd`, `taskProfile`, and `launchProfile` with `provider`, `model`, `thinking`, and
+`worktreeCwd`, `repoCwd`, `taskProfile`, and `launchProfile` with `provider`, `model`, `thinking`, and
 `auth: "subscription"`. Profiles are passed unchanged; runtime qualification
 belongs to Baa-ton. Missing profiles are not guessed.
 Profiles may be omitted for preview, but preparation requires an explicit
@@ -160,6 +161,67 @@ Profiles may be omitted for preview, but preparation requires an explicit
 resolved from a named `taskProfile`. Add the intended
 provider, model, thinking level and subscription auth to the task before planning;
 dispatch cannot supply a missing profile later.
+
+## One controller, multiple application repositories
+
+An optional task-level `repoCwd` names the absolute **integration checkout** for
+that task. `worktreeCwd` names its separate, pre-existing linked worker checkout.
+The controller can stay in the parent workspace, with one brief, session history,
+profile configuration and Baa-ton manifest. File scopes and commands are relative
+to the worker checkout, not prefixed with the application's workspace path.
+
+For Zach's Windows layout, a task can declare:
+
+```json
+{
+  "id": "application-fix",
+  "objective": "Apply the scoped application fix",
+  "repoCwd": "C:\\tc\\_SAVE\\globalshop",
+  "worktreeCwd": "C:\\worktrees\\globalshop-fix",
+  "taskProfile": "implementation",
+  "files": ["src/"],
+  "checks": ["Run the application's relevant tests"]
+}
+```
+
+Use native absolute paths for the machine running Pi. Without `repoCwd`, existing
+single-repository behavior is unchanged. With `repoCwd`, **both writers and
+read-only reviewers need a distinct linked `worktreeCwd`**; preview withholds plan
+arguments until it is assigned. The integration checkout may itself be a linked
+worktree on the intended integration branch. Forge never creates worktrees or
+merges commits. Keep nested repositories and generated state intentionally
+excluded from the parent repository where appropriate; all relevant checkouts
+must remain clean.
+
+Preparation validates the controller, integration checkout and worker, including
+canonical Git common-directory identity. Repository/worker branches and HEADs
+are captured and revalidated before planning. Verification requires the reviewed
+commit at the worker HEAD, unchanged mapped branches and integration into
+`repoCwd`, rather than the independent controller repository. A separate root in
+each application is not required by Forge.
+
+Explicit repository previews read Git metadata and bind repository identities
+into the preview hash. File-scope conflicts are compared within each repository;
+symlinks and different linked checkouts of the same repository share an identity.
+Read-only tasks still follow all writers. A cross-repository dependency requires
+its verification record and its commit still integrated in its own declared
+checkout. Same-repository dependencies additionally require ancestry in the
+current integration and worker checkouts. This does not prove that artifacts,
+packages or services have been published between applications; include those
+requirements in acceptance criteria and root validation.
+
+`repoCwd` is adapter metadata, not a new Baa-ton argument. Baa-ton receives the
+existing `worktreeCwd`; native reconciliation checks its repository-source
+binding separately from the controller session/pane/workspace identity.
+**Baa-ton/Herdr must recognize the application repository's source workspace and
+worktree.** A Forge preparation pass does not establish that native readiness.
+If Baa-ton reports missing source-workspace metadata, investigate its registration
+rather than substituting the parent workspace identity.
+
+Automated tests cover nested repositories, aliases, integration, dependencies,
+branch drift and native-manifest reconciliation. Windows and live Herdr dispatch
+for this multi-repository path still require qualification; the local automated
+suite runs on Linux and uses manifest fixtures, not paid worker sessions.
 
 ## Shared Baa-ton worker profiles
 
@@ -281,7 +343,7 @@ In the registered Pi root, preview the real brief, then prepare one lane:
 
 Prepare requires Herdr environment identity, the same brief hash as the last
 preview in this session branch, clean committed checkouts, and for writers a
-distinct linked worktree in the root repository. Both root and target must be
+distinct linked worktree in the declared repository (the root by default). Controller, integration checkout and worker must be
 checkout roots. A read-only lane without `worktreeCwd` reviews the root checkout.
 The target's paths are interpreted in that checkout, not relative to the brief.
 
@@ -346,17 +408,18 @@ Historical verification stays historical; moving a root does not adopt another
 session's workflow verification.
 
 After completion, independently rerun checks and inspect the lane changes. Once
-the reviewed commit is integrated into the root with authorization, record it:
+the reviewed commit is integrated into its designated checkout with authorization, record it:
 
 ```text
 /forgeflow-verify-lane herdr-id FULL_COMMIT_HASH checks independently rerun and results
 ```
 
 This requires matching durable completion receipts, a clean lane checkout at
-that commit, and commit ancestry in the root. Evidence text is the root's
+that commit, and commit ancestry in the designated integration checkout. Evidence text is the root's
 explicit attestation; the adapter does not run checks or validate prose claims.
 Dependent preparation requires a verification record for the same brief and
-requires the verified commit to be an ancestor of both root and target HEAD.
+requires integration in the dependency repository, plus the current integration
+and worker HEADs when they share that repository.
 Use an ancestry-preserving integration for this version; squashed/rebased
 equivalents are not inferred. A later lane checkout change invalidates verification
 of an earlier lane HEAD. Prepare dependent worktrees after integrating changes.

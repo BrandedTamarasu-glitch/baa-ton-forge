@@ -18,7 +18,8 @@ export async function checkout(cwd) {
   const head = await git(root, 'rev-parse', '--verify', 'HEAD');
   const commonDir = await realpath(await git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir'));
   const gitDir = await realpath(await git(root, 'rev-parse', '--absolute-git-dir'));
-  return { root, head, commonDir, linked: commonDir !== gitDir };
+  const branch = await git(root, 'symbolic-ref', '--quiet', '--short', 'HEAD').catch(() => null);
+  return { root, head, branch, commonDir, linked: commonDir !== gitDir };
 }
 export function identity(env = process.env) {
   if (env.HERDR_ENV !== '1' || !env.HERDR_PANE_ID || !env.HERDR_WORKSPACE_ID) throw new Error('Prepare requires a real Herdr pane with pane and workspace identity');
@@ -43,18 +44,25 @@ export async function prepareLane({ filename, taskId, preview, cwd, records = []
     if (!lane.launchProfile) throw new Error(`Task ${taskId} has no launchProfile; add one to the brief task before preparing`);
   }
   const root = await checkout(cwd);
+  const repository = workflow.repoCwd ? await checkout(workflow.repoCwd) : root;
   const target = await checkout(workflow.planArguments.worktreeCwd ?? cwd);
-  if (target.commonDir !== root.commonDir) throw new Error('Target belongs to a different repository than the root');
-  if (!workflow.readOnly && (!target.linked || target.root === root.root)) throw new Error('Writer requires a distinct linked worktree');
+  if (target.commonDir !== repository.commonDir) throw new Error('Target belongs to a different repository than the declared repository or root');
+  if ((!workflow.readOnly || workflow.repoCwd) && (!target.linked || target.root === repository.root || target.root === root.root)) throw new Error('Writer or explicit repository task requires a distinct linked worktree');
   for (const dependency of workflow.afterVerifiedAndIntegrated) {
     const record = records.findLast(item => item.kind === 'verified' && item.taskId === dependency && item.sourceSha256 === current.sourceSha256 && item.sourcePath === current.sourcePath && item.root === root.root);
     if (!record) throw new Error(`Dependency ${dependency} has no root verification record for this brief`);
-    await ancestor(root.root, record.commit);
-    await ancestor(target.root, record.commit);
+    const dependencyTask = current.workflows.find(item => item.taskId === dependency);
+    const integrated = await checkout(dependencyTask.repoCwd ?? cwd);
+    if (dependencyTask.repoCwd && (!record.repository || record.repository.root !== integrated.root || record.repository.commonDir !== integrated.commonDir)) throw new Error(`Dependency ${dependency} has no matching repository verification`);
+    await ancestor(integrated.root, record.commit);
+    if (integrated.commonDir === repository.commonDir) {
+      await ancestor(repository.root, record.commit);
+      await ancestor(target.root, record.commit);
+    }
   }
   const previous = records.findLast(item => ['planned', 'planning'].includes(item.kind) && !submissionRecovered(item, records) && item.taskId === taskId && item.sourcePath === current.sourcePath && item.sourceSha256 === current.sourceSha256 && item.root === root.root);
   if (previous) throw new Error(`Task already mapped or submitted (${previous.workflowId ?? previous.toolCallId}); inspect the Baa-ton ledger instead of replanning`);
-  return { kind: 'prepared', taskId, sourcePath: current.sourcePath, sourceSha256: current.sourceSha256, root: root.root, rootHead: root.head, target: target.root, targetHead: target.head, ...pane, planArguments: workflow.planArguments };
+  return { kind: 'prepared', taskId, sourcePath: current.sourcePath, sourceSha256: current.sourceSha256, root: root.root, rootHead: root.head, target: target.root, targetHead: target.head, ...(workflow.repoCwd ? { repository, targetBranch: target.branch } : {}), ...pane, planArguments: workflow.planArguments };
 }
 
 export async function revalidate(prepared, records, env = process.env) {
@@ -70,10 +78,12 @@ export async function reconcileLane({ filename, taskId, workflowId, cwd, session
   const pane = identity(env);
   const root = await checkout(cwd);
   const preview = await loadPreview(filename, { cwd });
-  const proposed = preview.workflows.find(item => item.taskId === taskId)?.planArguments;
+  const task = preview.workflows.find(item => item.taskId === taskId);
+  const proposed = task?.planArguments;
   if (!proposed) throw new Error('Brief has no plannable task with that ID');
   const target = await checkout(proposed.worktreeCwd ?? cwd);
-  if (target.commonDir !== root.commonDir) throw new Error('Target belongs to a different repository');
+  const repository = task.repoCwd ? await checkout(task.repoCwd) : root;
+  if (target.commonDir !== repository.commonDir) throw new Error('Target belongs to a different repository');
   const manifest = JSON.parse(await readFile(path.join(root.root, '.pi/herdr-orchestrator/manifest.json'), 'utf8'));
   const matches = manifest.workflows?.filter(workflow => workflow.id === workflowId) ?? [];
   if (matches.length !== 1) throw new Error('Expected exactly one durable workflow with that ID');
@@ -85,8 +95,15 @@ export async function reconcileLane({ filename, taskId, workflowId, cwd, session
     const expected = proposed.lanes[i], actual = workflow.lanes[i];
     if (actual.objective !== expected.objective || actual.readOnly !== expected.readOnly || actual.agentKind !== expected.agentKind || !isDeepStrictEqual(actual.launchProfile, expected.launchProfile) || (actual.dependencies?.length ?? 0) !== 0) throw new Error('Workflow lane does not match the brief scope, profile, or dependencies');
   }
-  if (!proposed.lanes[0].readOnly && (!target.linked || target.root === root.root || workflow.worktreeBinding?.repoParent?.checkoutPath !== root.root || workflow.worktreeBinding?.repoParent?.workspaceId !== pane.workspaceId)) throw new Error('Writer workflow has no matching linked-worktree parent binding');
-  return { kind: 'planned', taskId, sourcePath: preview.sourcePath, sourceSha256: preview.sourceSha256, root: root.root, target: target.root, ...pane, workflowId, planArguments: proposed, reconciledAt: new Date().toISOString(), mappingSource: 'durable-manifest' };
+  if (task.repoCwd) {
+    const parent = workflow.worktreeBinding?.repoParent;
+    if (!parent?.checkoutPath || !parent.workspaceId || !target.linked || target.root === repository.root || target.root === root.root) throw new Error('Workflow has no matching linked-worktree repository binding');
+    const nativeRepository = await checkout(parent.checkoutPath);
+    if (nativeRepository.commonDir !== repository.commonDir) throw new Error('Native worktree source belongs to a different repository');
+  } else {
+    if (!proposed.lanes[0].readOnly && (!target.linked || target.root === root.root || workflow.worktreeBinding?.repoParent?.checkoutPath !== root.root || workflow.worktreeBinding?.repoParent?.workspaceId !== pane.workspaceId)) throw new Error('Writer workflow has no matching linked-worktree parent binding');
+  }
+  return { kind: 'planned', taskId, sourcePath: preview.sourcePath, sourceSha256: preview.sourceSha256, root: root.root, target: target.root, ...(task.repoCwd ? { repository, targetBranch: target.branch } : {}), ...pane, workflowId, planArguments: proposed, reconciledAt: new Date().toISOString(), mappingSource: 'durable-manifest' };
 }
 
 export async function verifyLane({ mapped, commit, evidence, cwd }) {
@@ -98,6 +115,9 @@ export async function verifyLane({ mapped, commit, evidence, cwd }) {
   if (!workflow || workflow.cwd !== mapped.target || !workflow.lanes?.length || workflow.lanes.some(lane => !lane.completionReceipt?.id || !lane.completionReceipt?.summary)) throw new Error('Matching durable lane completion receipts are required before root verification');
   const target = await checkout(mapped.target);
   if (target.head !== commit) throw new Error('Commit must match the reviewed lane checkout HEAD');
-  await ancestor(root.root, commit);
+  const repository = mapped.repository ? await checkout(mapped.repository.root) : root;
+  if (mapped.repository && (repository.commonDir !== mapped.repository.commonDir || target.commonDir !== repository.commonDir)) throw new Error('Reviewed repository identity changed');
+  if (mapped.repository && (repository.branch !== mapped.repository.branch || target.branch !== mapped.targetBranch)) throw new Error('Repository or worker branch changed since mapping');
+  await ancestor(repository.root, commit);
   return { ...mapped, kind: 'verified', commit, evidence: evidence.trim(), verifiedAt: new Date().toISOString() };
 }
