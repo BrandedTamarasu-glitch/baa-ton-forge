@@ -107,6 +107,8 @@ registered `extension.js` path pointed at that checkout, then run `/reload` in
 each project root. If tools remain stale, restart Pi in the same Herdr pane and
 resume the same session. A new pane or workspace needs controller ownership
 recovery; reopening the transcript alone does not restore that identity.
+Launch interactive Pi directly (`pi --session <id>`), not through `rtk proxy`:
+the tested RTK wrapper pipes stdout, which makes Pi choose print-and-exit mode.
 Do not overwrite local modifications if the pull refuses to fast-forward.
 
 Named-profile support requires Baa-ton's project profile configuration:
@@ -134,6 +136,14 @@ checkout/HEAD/README content, and saved native verification. This qualifies that
 tested profile and workflow, not every configured model or included billing.
 The automated suite covers preparation guards, dependency integration, recovery,
 status, installation checks and CLI behavior. Run `npm test` for the current suite.
+
+A [Linux nested-repository trial](docs/linux-nested-repository-trial.md) also
+completed writer, application integration, dependent read-only review, and native
+root verification while leaving the controller checkout unchanged. Its evidence
+preserves an unexplained earlier integration transition accepted by the user;
+that acceptance is not retroactive proof of who performed the transition.
+The trial used local Baa-ton recovery/approval patches described in the report.
+Windows and cross-application live dependencies remain unqualified.
 
 This is an early local integration. It does not automatically create worktrees,
 dispatch, merge, cancel workflows, or retire resources. Editing a brief changes
@@ -299,7 +309,7 @@ The adapter exposes six native model-callable tools:
 | `forgeflow_plan_lanes` | `filename` | Lane preview and saved brief hash |
 | `forgeflow_prepare_lane` | `filename`, `taskId` | Checked handoff and saved preparation |
 | `forgeflow_reconcile_lane` | `filename`, `taskId`, `workflowId` | Validated recovery of a missing mapping |
-| `forgeflow_recover_submission` | `filename`, `taskId` | Append evidence for a proven pre-persistence root rejection, allowing fresh preparation |
+| `forgeflow_recover_submission` | `filename`, `taskId` | Append evidence for a proven pre-persistence root or missing-source-workspace rejection, allowing fresh preparation |
 | `forgeflow_verify_lane` | `workflowId`, `commit`, `evidence` | Saved root verification |
 
 When asking the Pi agent to perform these operations, name these tools. They
@@ -379,13 +389,17 @@ or relocating the worktree requires a separate recovery design.
 
 ### A rejected plan with no workflow
 
-If `herdr_plan` rejected a prepared task with exactly
-`Only the verified controller-mapped root may create or update the parent goal or queue.`,
-ask the **same Pi session branch and pane** to call the native
+If `herdr_plan` rejected a prepared task with either exact error:
+
+- `Only the verified controller-mapped root may create or update the parent goal or queue.`
+- `Herdr worktree list response is missing source_workspace_id.`
+
+Ask the **same Pi session branch and pane** to call the native
 `forgeflow_recover_submission` with `filename` and `taskId`.
 It reads the saved assistant tool call, unique failed native result, and original
-planning entry. The manifest's modification and change timestamps must predate
-the submission, and no matching workflow or saved mapping may exist.
+planning entry. No matching workflow or saved mapping may exist. The manifest
+must either predate submission or meet the narrowly supported native-observation
+baseline below.
 
 Use `/forgeflow-status` to confirm the session file before recovery. A new
 session in the correct project and pane still lacks the original planning
@@ -395,8 +409,28 @@ preview or plan to replace its missing history.
 This narrow path appends a `submission-no-effect` record with evidence hashes.
 It preserves the failed attempt and only releases that attempt's retry guard.
 It does not register a root or claim that a workflow completed. Missing results,
-different errors, a newer manifest, or ambiguous effects remain blocked; an
+different errors, unproven manifest changes, or ambiguous effects remain blocked; an
 existing durable workflow must use `forgeflow_reconcile_lane` instead.
+
+Baa-ton writes root activity into its manifest when a turn starts or ends, so
+file timestamps alone can reject an otherwise unchanged workflow inventory.
+For a newer manifest containing **only** `version`, `workflows`, and this owning
+Pi session's `sessionLog`, recovery can compare every complete workflow object
+against its latest successful native `herdr_observe` result saved before the
+failed submission. Each observation must have a unique matching native call and
+result. The inventory must also match the workflow IDs in earlier successful
+native plan/observe history. Added, removed, or changed workflows, missing
+observations, extra manifest state (including goals/queues), and foreign root
+activity remain blocked. Recovery records the proof mode and observation hashes;
+it never claims that a newer file has old timestamps.
+
+For a missing source workspace, the saved plan must contain an absolute
+`worktreeCwd`. Recover the failed submission before changing the manifest.
+Then inspect native workspace inventory and restore the application source
+workspace through the authorized Herdr flow. Do not invent a workspace ID,
+rewrite historical bindings, or create an application agent/root. Confirm the
+new native source binding, then run preview and prepare again. Recovery itself
+does not create a workspace or establish live readiness.
 
 For a stale controller registration, run submission recovery **before** any
 root migration or other manifest mutation. Then use Baa-ton's native
