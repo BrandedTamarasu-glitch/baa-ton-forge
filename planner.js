@@ -1,6 +1,7 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { resolveTaskProfile } from './profiles.js';
 
 function requireValue(condition, message) {
   if (!condition) throw new Error(message);
@@ -35,20 +36,38 @@ export function parseBrief(source) {
   return JSON.parse(blocks[0][1]);
 }
 
-export async function loadPreview(filename) {
+export async function loadPreview(filename, { cwd = process.cwd() } = {}) {
   const source = await readFile(filename, 'utf8');
   requireValue(Buffer.byteLength(source) <= 256 * 1024, 'Brief exceeds 256 KiB');
-  return buildPreview(parseBrief(source), { sourcePath: path.resolve(filename), sourceSha256: createHash('sha256').update(source).digest('hex') });
+  const brief = parseBrief(source);
+  const sha = value => createHash('sha256').update(value).digest('hex');
+  const metadata = { sourcePath: path.resolve(filename), sourceSha256: sha(source) };
+  let config;
+  if (Array.isArray(brief?.tasks) && brief.tasks.some(task => task?.taskProfile !== undefined)) {
+    const configPath = path.join(await realpath(cwd), '.baa-ton/config.json');
+    let contents;
+    try { contents = await readFile(configPath, 'utf8'); }
+    catch { throw new Error(`Cannot read task profiles at ${configPath}; run from the owning project root and configure the selected profiles`); }
+    requireValue(Buffer.byteLength(contents) <= 256 * 1024, 'Task profile config exceeds 256 KiB');
+    try { config = JSON.parse(contents); }
+    catch { throw new Error(`Invalid JSON in ${configPath}`); }
+    metadata.briefSha256 = metadata.sourceSha256;
+    metadata.profileConfig = { path: configPath, sha256: sha(contents) };
+    metadata.sourceSha256 = sha(JSON.stringify([metadata.briefSha256, configPath, metadata.profileConfig.sha256]));
+  }
+  return buildPreview(brief, metadata, config);
 }
 
-export function buildPreview(brief, source = {}) {
+export function buildPreview(brief, source = {}, profileConfig) {
   keys(brief, ['version', 'objective', 'acceptance', 'tasks'], 'brief');
   requireValue(brief.version === 1, 'brief.version must be 1');
   const objective = text(brief.objective, 'objective');
   const acceptance = strings(brief.acceptance, 'acceptance', true);
   requireValue(Array.isArray(brief.tasks) && brief.tasks.length > 0 && brief.tasks.length <= 50, 'tasks must contain 1–50 entries');
   const tasks = brief.tasks.map(task => {
-    keys(task, ['id', 'objective', 'files', 'checks', 'dependsOn', 'readOnly', 'agentKind', 'launchProfile', 'worktreeCwd'], 'task');
+    keys(task, ['id', 'objective', 'files', 'checks', 'dependsOn', 'readOnly', 'agentKind', 'launchProfile', 'taskProfile', 'worktreeCwd'], 'task');
+    requireValue(task.readOnly === undefined || typeof task.readOnly === 'boolean', 'task.readOnly must be boolean');
+    task = resolveTaskProfile(task, profileConfig);
     const id = text(task.id, 'task.id');
     requireValue(/^[a-z][a-z0-9-]{0,63}$/.test(id), `Invalid task id: ${id}`);
     requireValue(task.readOnly === undefined || typeof task.readOnly === 'boolean', `${id}: readOnly must be boolean`);
@@ -98,6 +117,7 @@ export function buildPreview(brief, source = {}) {
     const lane = { objective: laneObjective, readOnly: task.readOnly, agentKind: task.agentKind, ...(task.launchProfile ? { launchProfile: task.launchProfile } : {}) };
     return {
       taskId: task.id, objective: task.objective, readOnly: task.readOnly, files: task.files, checks: task.checks,
+      ...(task.taskProfile !== undefined ? { taskProfile: task.taskProfile } : {}),
       afterVerifiedAndIntegrated: [...dependencies.get(task.id)],
       blockers: [...(!task.worktreeCwd && !task.readOnly ? ['Assign a clean, pre-existing worktree before planning.'] : []), 'Root must verify current checkout, pane identity, authorization, and harness capabilities before planning.'],
       planArguments: !task.readOnly && !task.worktreeCwd ? null : { objective: `${objective}: ${task.objective}`, lanes: [lane], ...(task.worktreeCwd ? { worktreeCwd: task.worktreeCwd } : {}) },
@@ -107,5 +127,5 @@ export function buildPreview(brief, source = {}) {
 }
 
 export function renderPreview(preview) {
-  return [`Baa-ton lane preview: ${preview.objective}`, '', 'Preview only. No tools dispatched, commands executed, or workflow ledgers changed.', 'Cross-workflow dependencies below must be enforced by the root; they are not Baa-ton lane dependencies.', 'Write scopes are instructions, not filesystem sandbox rules.', '', ...preview.stages.map((ids, i) => `Stage ${i + 1}: ${ids.join(', ')}`), '', ...preview.workflows.flatMap(workflow => [`${workflow.taskId}: ${workflow.readOnly ? 'read-only' : 'writer'}`, `Objective: ${workflow.objective}`, `Scope: ${workflow.files.join(', ')}`, `Checks: ${workflow.checks.join('; ')}`, `After verified and integrated: ${workflow.afterVerifiedAndIntegrated.join(', ') || 'none'}`, ...workflow.blockers.map(blocker => `Pending: ${blocker}`), ...(workflow.planArguments ? ['Proposed herdr_plan arguments:', '```json', JSON.stringify(workflow.planArguments, null, 2), '```'] : ['Plan arguments withheld until a writer worktree is assigned.']), ''])].join('\n');
+  return [`Baa-ton lane preview: ${preview.objective}`, ...(preview.profileConfig ? [`Profile config: ${preview.profileConfig.path}`, `Profile config SHA-256: ${preview.profileConfig.sha256}`] : []), '', 'Preview only. No tools dispatched, commands executed, or workflow ledgers changed.', 'Cross-workflow dependencies below must be enforced by the root; they are not Baa-ton lane dependencies.', 'Write scopes are instructions, not filesystem sandbox rules.', '', ...preview.stages.map((ids, i) => `Stage ${i + 1}: ${ids.join(', ')}`), '', ...preview.workflows.flatMap(workflow => [`${workflow.taskId}: ${workflow.readOnly ? 'read-only' : 'writer'}`, ...(workflow.taskProfile ? [`Task profile: ${workflow.taskProfile} (resolved to explicit launch arguments)`] : []), `Objective: ${workflow.objective}`, `Scope: ${workflow.files.join(', ')}`, `Checks: ${workflow.checks.join('; ')}`, `After verified and integrated: ${workflow.afterVerifiedAndIntegrated.join(', ') || 'none'}`, ...workflow.blockers.map(blocker => `Pending: ${blocker}`), ...(workflow.planArguments ? ['Proposed herdr_plan arguments:', '```json', JSON.stringify(workflow.planArguments, null, 2), '```'] : ['Plan arguments withheld until a writer worktree is assigned.']), ''])].join('\n');
 }

@@ -20,7 +20,7 @@ function renderHandoff(prepared) {
 export default function adapter(pi) {
   const pending = new Map();
   async function preview(params, ctx) {
-    const result = await loadPreview(path.resolve(ctx.cwd, params.filename));
+    const result = await loadPreview(path.resolve(ctx.cwd, params.filename), { cwd: ctx.cwd });
     pi.appendEntry(ENTRY, { kind: 'preview', sourcePath: result.sourcePath, sourceSha256: result.sourceSha256 });
     return result;
   }

@@ -78,8 +78,11 @@ missing native tools with shell imports or mock APIs.
 ## 4. Preview before dispatch
 
 Create a project-specific brief using [the brief contract](README.md#brief-contract).
-Include an explicit `launchProfile` on each task, including read-only tasks.
-Preparation rejects missing profiles before creating a workflow; preview alone
+Include either an explicit `launchProfile` or a named `taskProfile` on each task,
+including read-only tasks. For named profiles, configure the corresponding entry
+in the root's `.baa-ton/config.json` with `baa-ton-configure` first. Preserve
+existing project configuration. See [shared profiles](README.md#shared-baa-ton-worker-profiles).
+Preparation rejects missing or incomplete profiles before creating a workflow; preview alone
 does not establish dispatch readiness. Use the provider/model authorized for this
 project rather than copying another project's selection.
 Run `/forgeflow-status ".forgeflow/brief.json"` first. For a new project, missing

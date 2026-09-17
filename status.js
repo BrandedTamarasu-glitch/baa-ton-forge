@@ -17,7 +17,7 @@ function matchesTask(workflow, task, cwd) {
 }
 
 export async function laneStatus({ filename, cwd, records = [], sessionFile, env = process.env }) {
-  const preview = await loadPreview(filename);
+  const preview = await loadPreview(filename, { cwd });
   const root = await realpath(cwd);
   const current = { root, sessionFile: sessionFile ?? null, paneId: env.HERDR_PANE_ID ?? null, workspaceId: env.HERDR_WORKSPACE_ID ?? null, inHerdr: env.HERDR_ENV === '1' };
   const warnings = [];
@@ -36,7 +36,7 @@ export async function laneStatus({ filename, cwd, records = [], sessionFile, env
   if (!briefRecords.length) warnings.push('No adapter records for this brief in the current session branch. This does not mean the task has never run; check the owning project and root session.');
   if (!current.inHerdr) warnings.push('Current process is outside a confirmed Herdr environment; this report does not establish root identity.');
   const staleRecordCount = briefRecords.filter(record => record.sourceSha256 !== preview.sourceSha256).length;
-  if (staleRecordCount) warnings.push(`${staleRecordCount} record(s) belong to an older brief hash and are not used as current verification.`);
+  if (staleRecordCount) warnings.push(`${staleRecordCount} record(s) belong to an older brief/profile snapshot and are not used as current verification.`);
   const tasks = [];
   for (const task of preview.workflows) {
     const history = briefRecords.filter(record => record.sourceSha256 === preview.sourceSha256 && record.taskId === task.taskId && record.root === root);

@@ -35,7 +35,8 @@ preparation and verification-record checks are not involved.
 ## What it does
 
 - Previews task scopes, dependency stages, and exact proposed Baa-ton arguments.
-- Requires explicit launch profiles, clean checkouts, and appropriate writer
+- Resolves named Baa-ton task profiles into exact launch settings.
+- Requires resolved launch profiles, clean checkouts, and appropriate writer
   worktrees before preparing a lane.
 - Checks that dependency verification matches the brief and that verified commits
   are integrated into both the root and the dependent checkout.
@@ -116,13 +117,51 @@ requirements in the block's objectives and acceptance criteria.
 Required top-level fields: `version: 1`, `objective`, nonempty `acceptance`, and
 `tasks`. Each task requires a unique `id`, `objective`, nonempty `files`, and
 nonempty `checks`. Optional fields: `dependsOn`, `readOnly`, `agentKind`,
-`worktreeCwd`, and `launchProfile` with `provider`, `model`, `thinking`, and
+`worktreeCwd`, `taskProfile`, and `launchProfile` with `provider`, `model`, `thinking`, and
 `auth: "subscription"`. Profiles are passed unchanged; runtime qualification
 belongs to Baa-ton. Missing profiles are not guessed.
 Profiles may be omitted for preview, but preparation requires an explicit
-`launchProfile` for every lane, including read-only reviews. Add the intended
+`launchProfile` for every lane, including read-only reviews, either directly or
+resolved from a named `taskProfile`. Add the intended
 provider, model, thinking level and subscription auth to the task before planning;
 dispatch cannot supply a missing profile later.
+
+## Shared Baa-ton worker profiles
+
+Configure model assignments once per project in `.baa-ton/config.json` using
+Baa-ton's `baa-ton-configure` skill. Brief tasks can then use
+`"taskProfile": "quick"` or `"taskProfile": "review"` instead of repeating
+`launchProfile`. See [the named-profile example](examples/named-profiles.md).
+
+The supported Baa-ton v1 names are `planning`, `quick`, `balanced`,
+`implementation`, `sustained`, `review`, and `deep-review`. Resolution uses the
+owning Pi root's configuration, not the brief's directory or a writer worktree's
+copy. For CLI previews, run from the project root using the absolute adapter CLI
+path. The adapter uses only data from the config and does not execute Baa-ton code.
+
+Each selected config entry must have an exact `launchProfile`. Its `agentKind`
+is used unless absent, in which case the task's choice or the existing `pi`
+default applies. Conflicting task/config harness choices are rejected. A task
+cannot specify both `taskProfile` and `launchProfile`. Read-only settings in
+the config and the built-in `planning`, `review`, and `deep-review` profiles
+cannot be weakened by the brief. This does not add a pre-implementation planning
+stage: the adapter still schedules all read-only tasks after writers.
+
+The preview shows the selected profile and emits resolved explicit arguments;
+it does not forward `taskProfile` to Baa-ton for a second resolution. For named
+profiles, `sourceSha256` binds the brief bytes, canonical configuration path and
+entire configuration file hash. `briefSha256` retains the brief-only hash.
+Even an unrelated config edit requires a new preview and invalidates old
+verification for dependency preparation. Finish an active brief before changing
+its profile configuration; changing config does not cancel an existing workflow.
+Explicit-profile briefs retain their existing brief-only hashes and behavior.
+
+Profile configuration selects credentials by auth mode, not billing entitlement.
+`auth: "subscription"` currently means OAuth; it does not guarantee included
+plan usage. Model availability, billing authorization and startup qualification
+must still be checked before dispatch.
+
+## Harnesses and file scopes
 
 This version accepts the four kinds with launch adapters in the installed
 Baa-ton: `pi`, `claude`, `codex`, and `opencode`. Baa-ton recognizes additional

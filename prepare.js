@@ -31,8 +31,8 @@ async function ancestor(cwd, commit) {
 
 export async function prepareLane({ filename, taskId, preview, cwd, records = [], env = process.env }) {
   const pane = identity(env);
-  const current = await loadPreview(filename);
-  if (!preview || preview.sourcePath !== current.sourcePath || preview.sourceSha256 !== current.sourceSha256) throw new Error('Brief is new or changed; run /forgeflow-plan-lanes again before preparing');
+  const current = await loadPreview(filename, { cwd });
+  if (!preview || preview.sourcePath !== current.sourcePath || preview.sourceSha256 !== current.sourceSha256) throw new Error('Brief or task profile configuration is new or changed; run /forgeflow-plan-lanes again before preparing');
   const workflow = current.workflows.find(item => item.taskId === taskId);
   if (!workflow) throw new Error(`Unknown task: ${taskId}`);
   if (!workflow.planArguments) throw new Error('Assign the writer worktree, then preview again');
@@ -68,7 +68,7 @@ export function matchPlan(prepared, event) {
 export async function reconcileLane({ filename, taskId, workflowId, cwd, sessionFile, env = process.env }) {
   const pane = identity(env);
   const root = await checkout(cwd);
-  const preview = await loadPreview(filename);
+  const preview = await loadPreview(filename, { cwd });
   const proposed = preview.workflows.find(item => item.taskId === taskId)?.planArguments;
   if (!proposed) throw new Error('Brief has no plannable task with that ID');
   const target = await checkout(proposed.worktreeCwd ?? cwd);

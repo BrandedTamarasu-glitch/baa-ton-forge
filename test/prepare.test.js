@@ -67,6 +67,37 @@ test('prepare rejects tasks without an explicit launch profile before any workfl
   }
 });
 
+test('named profiles bind preview, preparation and dependency verification to project config', async t => {
+  const f = await fixture(t);
+  const launchProfile = f.brief.tasks[0].launchProfile;
+  delete f.brief.tasks[0].launchProfile;
+  f.brief.tasks[0].taskProfile = 'quick';
+  f.brief.tasks.push({ id: 'review', objective: 'Review text', taskProfile: 'review', files: ['source.txt'], checks: ['Inspect diff'] });
+  await mkdir(path.join(f.root, '.baa-ton'));
+  await writeFile(path.join(f.root, '.git/info/exclude'), '.pi/\n.baa-ton/\n');
+  const configPath = path.join(f.root, '.baa-ton/config.json');
+  const config = { version: 1, profiles: { quick: { agentKind: 'pi', launchProfile }, review: { agentKind: 'pi', launchProfile } } };
+  await writeFile(configPath, JSON.stringify(config));
+  await writeFile(f.filename, JSON.stringify(f.brief));
+  f.preview = await loadPreview(f.filename, { cwd: f.root });
+  const tools = new Map(), entries = [];
+  adapter({ registerCommand() {}, registerTool: tool => tools.set(tool.name, tool), appendEntry: (_type, data) => entries.push(data) });
+  const nativePreview = await tools.get('forgeflow_plan_lanes').execute('preview', { filename: f.filename }, undefined, undefined, { cwd: f.root });
+  assert.equal(nativePreview.details.sourceSha256, f.preview.sourceSha256);
+  assert.equal(entries[0].sourceSha256, f.preview.sourceSha256);
+  const prepared = await prepareLane(f);
+  assert.deepEqual(prepared.planArguments.lanes[0].launchProfile, launchProfile);
+  await revalidate(prepared, [], env);
+  const verified = { ...prepared, kind: 'verified', commit: prepared.targetHead };
+  assert.equal((await prepareLane({ ...f, taskId: 'review', records: [verified] })).taskId, 'review');
+  config.profiles.quick.launchProfile = { ...launchProfile, model: 'different-model' };
+  await writeFile(configPath, JSON.stringify(config));
+  await assert.rejects(prepareLane(f), /configuration is new or changed/);
+  await assert.rejects(revalidate(prepared, [], env), /configuration is new or changed/);
+  const refreshed = await loadPreview(f.filename, { cwd: f.root });
+  await assert.rejects(prepareLane({ ...f, preview: refreshed, taskId: 'review', records: [verified] }), /no root verification/);
+});
+
 test('dependencies require matching verification and commit ancestry in target', async t => {
   const f = await fixture(t);
   f.brief.tasks.push({ id: 'review', objective: 'Review text', readOnly: true, files: ['source.txt'], checks: ['Inspect diff'], launchProfile: f.brief.tasks[0].launchProfile });
@@ -141,6 +172,23 @@ test('reconciliation restores only a mapping, without inventing preparation or v
   assert.equal('targetHead' in mapped, false);
   assert.equal('verifiedAt' in mapped, false);
   assert.equal('commit' in mapped, false);
+});
+
+test('named-profile recovery requires the configured profile to match the durable lane', async t => {
+  const f = await recoveryFixture(t);
+  const launchProfile = f.brief.tasks[0].launchProfile;
+  delete f.brief.tasks[0].launchProfile;
+  f.brief.tasks[0].taskProfile = 'quick';
+  await mkdir(path.join(f.root, '.baa-ton'));
+  await writeFile(path.join(f.root, '.git/info/exclude'), '.pi/\n.baa-ton/\n');
+  const configPath = path.join(f.root, '.baa-ton/config.json');
+  const config = { version: 1, profiles: { quick: { agentKind: 'pi', launchProfile } } };
+  await writeFile(configPath, JSON.stringify(config));
+  await writeFile(f.filename, JSON.stringify(f.brief));
+  assert.equal((await reconcileLane(f)).workflowId, f.workflowId);
+  config.profiles.quick.launchProfile.model = 'different-model';
+  await writeFile(configPath, JSON.stringify(config));
+  await assert.rejects(reconcileLane(f), /does not match/);
 });
 
 test('reconciliation rejects foreign roots and mismatched lane evidence', async t => {
