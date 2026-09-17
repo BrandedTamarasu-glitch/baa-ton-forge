@@ -4,6 +4,7 @@ import { realpath, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { loadPreview } from './planner.js';
+import { submissionRecovered } from './recovery.js';
 
 const exec = promisify(execFile);
 async function git(cwd, ...args) {
@@ -51,7 +52,7 @@ export async function prepareLane({ filename, taskId, preview, cwd, records = []
     await ancestor(root.root, record.commit);
     await ancestor(target.root, record.commit);
   }
-  const previous = records.findLast(item => ['planned', 'planning'].includes(item.kind) && item.taskId === taskId && item.sourcePath === current.sourcePath && item.sourceSha256 === current.sourceSha256 && item.root === root.root);
+  const previous = records.findLast(item => ['planned', 'planning'].includes(item.kind) && !submissionRecovered(item, records) && item.taskId === taskId && item.sourcePath === current.sourcePath && item.sourceSha256 === current.sourceSha256 && item.root === root.root);
   if (previous) throw new Error(`Task already mapped or submitted (${previous.workflowId ?? previous.toolCallId}); inspect the Baa-ton ledger instead of replanning`);
   return { kind: 'prepared', taskId, sourcePath: current.sourcePath, sourceSha256: current.sourceSha256, root: root.root, rootHead: root.head, target: target.root, targetHead: target.head, ...pane, planArguments: workflow.planArguments };
 }

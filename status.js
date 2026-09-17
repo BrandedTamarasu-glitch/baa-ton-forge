@@ -3,6 +3,7 @@ import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { loadPreview } from './planner.js';
 import { prepareLane } from './prepare.js';
+import { submissionRecovered } from './recovery.js';
 
 function matchesTask(workflow, task, cwd) {
   const args = task.planArguments;
@@ -43,7 +44,7 @@ export async function laneStatus({ filename, cwd, records = [], sessionFile, env
     const mapped = history.findLast(record => record.kind === 'planned');
     const verified = mapped && history.findLast(record => record.kind === 'verified' && record.workflowId === mapped.workflowId);
     const prepared = history.findLast(record => record.kind === 'prepared');
-    const submitted = history.findLast(record => record.kind === 'planning');
+    const submitted = history.findLast(record => record.kind === 'planning' && !submissionRecovered(record, history));
     const candidates = mapped ? workflows.filter(workflow => workflow.id === mapped.workflowId) : workflows.filter(workflow => matchesTask(workflow, task, root));
     const workflow = candidates.length === 1 ? candidates[0] : undefined;
     const binding = workflow?.taskBinding;

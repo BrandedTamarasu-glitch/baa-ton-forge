@@ -2,6 +2,7 @@ import path from 'node:path';
 import { loadPreview, renderPreview } from './planner.js';
 import { prepareLane, revalidate, matchPlan, verifyLane, reconcileLane } from './prepare.js';
 import { laneStatus, renderStatus } from './status.js';
+import { recoverSubmission } from './recovery.js';
 
 const ENTRY = 'forgeflow-adapter';
 const message = error => error instanceof Error ? error.message : String(error);
@@ -19,6 +20,12 @@ function renderHandoff(prepared) {
 
 export default function adapter(pi) {
   const pending = new Map();
+  async function recover(params, ctx) {
+    if (pending.size) throw new Error('A plan is still in flight; wait for its result');
+    const record = await recoverSubmission({ ...params, cwd: ctx.cwd, entries: ctx.sessionManager.getBranch(), sessionFile: ctx.sessionManager.getSessionFile() });
+    if (!records(ctx).some(item => item.kind === record.kind && item.toolCallId === record.toolCallId)) pi.appendEntry(ENTRY, record);
+    return record;
+  }
   async function preview(params, ctx) {
     const result = await loadPreview(path.resolve(ctx.cwd, params.filename), { cwd: ctx.cwd });
     pi.appendEntry(ENTRY, { kind: 'preview', sourcePath: result.sourcePath, sourceSha256: result.sourceSha256 });
@@ -50,6 +57,7 @@ export default function adapter(pi) {
     return verified;
   }
   for (const definition of [
+    { name: 'forgeflow_recover_submission', label: 'Reconcile rejected submission', fields: ['filename', 'taskId'], run: recover, render: record => `Saved no-durable-effect evidence for ${record.taskId}, attempt ${record.toolCallId}. History retained. Run preview and prepare again after root authorization is repaired.`, description: 'Recover only an exact saved pre-persistence herdr_plan root-authorization rejection in this native Pi session. Requires the matching call/result and an unchanged manifest predating submission; fails closed for ambiguous effects. Appends evidence without deleting history, changing the brief, registering roots, planning or dispatching. Run before root migration changes the manifest.' },
     { name: 'forgeflow_status', label: 'Show workflow status', fields: ['filename'], run: status, render: renderStatus, description: 'Read-only status for a brief: current root/session, owning pane/workspace, workflow IDs, durable receipts, saved verification and preparation blockers. Reads only this checkout manifest and current session branch. Does not scan other projects, save records, run tests, prepare or dispatch. Use to detect wrong-root context before acting.' },
     { name: 'forgeflow_plan_lanes', label: 'Preview workflow lanes', fields: ['filename'], run: preview, render: renderPreview, description: 'Preview a structured Forgeflow brief and save its hash in this live Pi session. Returns lane scopes, dependencies, blockers and proposed planning arguments. Does not call Baa-ton, create worktrees, run checks or dispatch. Use this tool before forgeflow_prepare_lane; shell imports do not save session records.' },
     { name: 'forgeflow_prepare_lane', label: 'Prepare workflow lane', fields: ['filename', 'taskId'], run: prepare, render: renderHandoff, description: 'Validate a previously previewed brief and persist a checked lane handoff in this live Pi session. Requires current Herdr identity, clean committed checkouts, a distinct linked worktree for writers, and verified integrated dependencies. Returns exact herdr_plan arguments; does not plan or dispatch. Call herdr_plan separately only under existing authorization.' },
@@ -128,6 +136,7 @@ export default function adapter(pi) {
     const prepared = history.findLast(item => item.kind === 'prepared' && item.planArguments.objective === event.input.objective);
     if (!prepared) return;
     try {
+      if (history.slice(history.lastIndexOf(prepared) + 1).some(item => item.kind === 'submission-no-effect' && item.root === prepared.root && item.taskId === prepared.taskId && item.sourcePath === prepared.sourcePath && item.sourceSha256 === prepared.sourceSha256)) throw new Error('Submission was recovered; prepare the lane again before planning');
       if (!matchPlan(prepared, event)) throw new Error('Arguments differ from the prepared lane; prepare again');
       if (path.resolve(ctx.cwd) !== prepared.root) throw new Error('Root directory changed since prepare');
       if (pending.size) throw new Error('Another prepared plan is in flight; wait for its result');

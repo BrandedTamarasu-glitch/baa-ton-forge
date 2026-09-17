@@ -7,6 +7,9 @@ import { execFileSync } from 'node:child_process';
 import { loadPreview } from '../planner.js';
 import { prepareLane, revalidate, verifyLane, reconcileLane } from '../prepare.js';
 import adapter from '../extension.js';
+import { recoverSubmission, submissionRecovered } from '../recovery.js';
+import { laneStatus } from '../status.js';
+import { setTimeout as delay } from 'node:timers/promises';
 
 const env = { HERDR_ENV: '1', HERDR_PANE_ID: 'test:p1', HERDR_WORKSPACE_ID: 'test' };
 function git(cwd, ...args) { return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim(); }
@@ -30,6 +33,81 @@ async function fixture(t) {
   await writeFile(filename, JSON.stringify(brief));
   return { root, target, filename, brief, preview: await loadPreview(filename), cwd: root, taskId: 'writer', env };
 }
+
+async function rejectedSubmission(t) {
+  const f = await fixture(t);
+  const prepared = await prepareLane(f);
+  const manifestPath = path.join(f.root, '.pi/herdr-orchestrator/manifest.json');
+  await mkdir(path.dirname(manifestPath), { recursive: true });
+  await writeFile(manifestPath, JSON.stringify({ version: 2, workflows: [], parentGoal: { objective: 'unrelated history' } }));
+  await delay(10);
+  const timestamp = new Date().toISOString(), toolCallId = 'native-plan-1';
+  const entries = [
+    { id: 'assistant', timestamp, type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', id: toolCallId, name: 'herdr_plan', arguments: prepared.planArguments }] } },
+    { id: 'planning', timestamp, type: 'custom', customType: 'forgeflow-adapter', data: { ...prepared, kind: 'planning', toolCallId } },
+    { id: 'result', timestamp, type: 'message', message: { role: 'toolResult', toolName: 'herdr_plan', toolCallId, isError: true, content: [{ type: 'text', text: 'Only the verified controller-mapped root may create or update the parent goal or queue.' }] } },
+  ];
+  return { ...f, entries, sessionFile: '/fixture/session.jsonl', prepared, manifestPath };
+}
+
+test('native recovery retains failed history across reload and permits only that attempt to retry', async t => {
+  const f = await rejectedSubmission(t), original = structuredClone(f.entries);
+  const saved = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]));
+  Object.assign(process.env, env);
+  t.after(() => { for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
+  const ctx = { cwd: f.root, sessionManager: { getBranch: () => f.entries, getSessionFile: () => f.sessionFile } };
+  const reload = () => {
+    const tools = new Map();
+    adapter({ registerCommand() {}, registerTool: tool => tools.set(tool.name, tool), appendEntry: (customType, data) => f.entries.push({ type: 'custom', customType, data }) });
+    return tools.get('forgeflow_recover_submission');
+  };
+  const before = await readFile(f.manifestPath, 'utf8');
+  await assert.rejects(prepareLane({ ...f, records: [f.entries[1].data] }), /already mapped/);
+  const result = await reload().execute('recovery', { filename: f.filename, taskId: f.taskId }, undefined, undefined, ctx);
+  assert.equal(result.details.kind, 'submission-no-effect');
+  assert.equal(result.details.evidence.resultEntryId, 'result');
+  assert.deepEqual(f.entries.slice(0, 3), original);
+  assert.equal(await readFile(f.manifestPath, 'utf8'), before);
+  await reload().execute('retry', { filename: f.filename, taskId: f.taskId }, undefined, undefined, ctx);
+  assert.equal(f.entries.length, 4, 'reload is idempotent');
+  const records = f.entries.filter(entry => entry.type === 'custom').map(entry => entry.data);
+  assert.equal((await prepareLane({ ...f, records })).targetHead, f.prepared.targetHead);
+  const status = await laneStatus({ ...f, records: [{ ...f.preview, kind: 'preview' }, ...records] });
+  assert.notEqual(status.tasks[0].state, 'submitted-unmapped');
+  assert.equal(status.tasks[0].prepareCheck, 'passed');
+  const otherAttempt = { ...f.entries[1].data, toolCallId: 'native-plan-2' };
+  assert.equal(submissionRecovered(otherAttempt, records), false);
+  await assert.rejects(prepareLane({ ...f, records: [...records, otherAttempt] }), /already mapped/);
+  await assert.rejects(prepareLane({ ...f, records: [...records, { ...f.prepared, kind: 'planned', workflowId: 'durable' }] }), /already mapped/);
+  let guard;
+  adapter({ registerCommand() {}, on: (name, handler) => { if (name === 'tool_call') guard = handler; } });
+  const staleHistory = [f.prepared, ...records].map(data => ({ type: 'custom', customType: 'forgeflow-adapter', data }));
+  const blocked = await guard({ toolName: 'herdr_plan', toolCallId: 'retry', input: f.prepared.planArguments }, { cwd: f.root, sessionManager: { getBranch: () => staleHistory } });
+  assert.equal(blocked.block, true);
+  assert.match(blocked.reason, /prepare the lane again/);
+});
+
+test('recovery rejects ambiguous outcomes, missing native evidence, mismatched arguments and foreign identity', async t => {
+  const f = await rejectedSubmission(t);
+  for (const change of [
+    entries => { entries[2].message.isError = false; },
+    entries => { entries[2].message.content[0].text = 'Database write failed'; },
+    entries => { entries[0].message.content[0].arguments = { objective: 'different' }; },
+    entries => { entries.pop(); },
+    entries => { entries.push(structuredClone(entries[2])); },
+    entries => { entries[1].timestamp = 'bad'; },
+  ]) {
+    const entries = structuredClone(f.entries); change(entries);
+    await assert.rejects(recoverSubmission({ ...f, entries }));
+  }
+  await assert.rejects(recoverSubmission({ ...f, env: { ...env, HERDR_PANE_ID: 'other' } }), /another pane/);
+  await assert.rejects(recoverSubmission({ ...f, env: {} }), /real Herdr/);
+  const entries = [...f.entries, { type: 'custom', customType: 'forgeflow-adapter', data: { ...f.prepared, kind: 'planned', workflowId: 'durable' } }];
+  await assert.rejects(recoverSubmission({ ...f, entries }), /durable mapping/);
+  await delay(5);
+  await writeFile(f.manifestPath, JSON.stringify({ version: 2, workflows: [], parentGoal: { objective: 'partial write' } }));
+  await assert.rejects(recoverSubmission(f), /Manifest changed since submission/);
+});
 
 test('prepare binds checkout and brief; revalidation detects dirty files, head and identity changes', async t => {
   const f = await fixture(t);
