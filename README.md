@@ -3,6 +3,10 @@
 A local Pi adapter that previews Baa-ton lane plans from Forgeflow briefs.
 Requires Node.js 20+. No runtime dependencies or network calls.
 
+For another project, follow [the setup guide](SETUP.md). Reuse the installed
+extension while keeping each project's root session and workflow state separate.
+Check local prerequisites with `rtk proxy node check-install.js --project "/path/to/project"`.
+
 ## Use
 
 ```sh
