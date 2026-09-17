@@ -1,22 +1,83 @@
 # Baa-ton Forge
 
-A local Pi adapter that previews Baa-ton lane plans from Forgeflow briefs.
-Requires Node.js 20+. No runtime dependencies or network calls.
+A Pi extension that connects [Forgeflow](https://github.com/BrandedTamarasu-glitch/ForgeFlow)
+planning and review to [Baa-ton](https://github.com/zachristmas/baa-ton) lane
+orchestration in Herdr. Turn a structured brief into checked lane handoffs, track
+workflow ownership, and record independent root verification before dependent
+work proceeds.
 
-For another project, follow [the setup guide](SETUP.md). Reuse the installed
-extension while keeping each project's root session and workflow state separate.
-Check local prerequisites with `rtk proxy node check-install.js --project "/path/to/project"`.
+**Baa-ton owns dispatch and completion receipts. The root verifies the work.**
+The adapter adds preparation and record-keeping around that workflow; it does not
+run a second agent orchestrator or spawn agents inside lanes.
 
-## Use
+## Start with a task, not a hand-written file
 
-```sh
-rtk proxy node cli.js examples/brief.md
-rtk proxy node cli.js --json examples/brief.md
-rtk proxy npm test
+Give your project's registered Baa-ton root a task in plain language. Pi can
+write the structured brief for you; you do not need a separate assistant to
+generate it. For example:
+
+```text
+I want to add keyboard navigation to the settings page.
+
+Use Forgeflow lean guidance to create .forgeflow/settings-navigation.json
+with scope, acceptance criteria, validation, dependencies, and explicit
+launch profiles using my authorized provider and model. Ask about unresolved
+requirements. Use forgeflow_plan_lanes to preview it, then stop before dispatch.
+
+Baa-ton owns lane dispatch and receipts. Root independently verifies completion.
+Do not spawn nested agents inside lanes.
 ```
 
-Register the absolute `extension.js` path in Pi's `settings.json` extensions
-array. Reload Pi with `/reload`, then run:
+The adapter requires a structured brief; it does not itself convert prose into
+one. You can also use Baa-ton directly without this adapter, in which case these
+preparation and verification-record checks are not involved.
+
+## What it does
+
+- Previews task scopes, dependency stages, and exact proposed Baa-ton arguments.
+- Requires explicit launch profiles, clean checkouts, and appropriate writer
+  worktrees before preparing a lane.
+- Checks that dependency verification matches the brief and that verified commits
+  are integrated into both the root and the dependent checkout.
+- Saves workflow mappings and root verification in the active Pi session branch.
+- Recovers missing mappings from matching durable Baa-ton manifests.
+- Shows task status, owning roots, completion receipts, and preparation blockers.
+
+Install once and use it from each project's own Baa-ton root. The adapter's
+development checkout does not need to control other projects.
+
+## Install and preview
+
+Requires Node.js 20+. Preview, local checks, and tests use Node's standard library
+with no dependency installation. Live use additionally requires Git, Pi,
+Herdr/Baa-ton, and the Forgeflow guidance/skills you intend to apply. The adapter
+does not install those tools or manage provider login.
+
+```sh
+git clone https://github.com/BrandedTamarasu-glitch/baa-ton-forge.git
+cd baa-ton-forge
+node cli.js examples/brief.md
+node cli.js --json examples/brief.md
+npm test
+```
+
+For live use, add the absolute path to `extension.js` to the `extensions` array
+in Pi's `~/.pi/agent/settings.json`, preserving existing entries:
+
+```json
+{
+  "extensions": ["/absolute/path/to/baa-ton-forge/extension.js"]
+}
+```
+
+Follow [SETUP.md](SETUP.md) to establish the actual project's Herdr root and keep
+generated workflow state excluded from Git. Check local prerequisites with:
+
+```sh
+node /absolute/path/to/baa-ton-forge/check-install.js --project /path/to/project
+```
+
+In that project's Pi root, reload with `/reload`, then run:
 
 ```text
 /forgeflow-plan-lanes /absolute/path/to/brief.md
@@ -25,6 +86,24 @@ array. Reload Pi with `/reload`, then run:
 Paths containing spaces are supported, with or without enclosing double quotes.
 The command displays the preview without starting a model turn. Pi may retain
 that displayed message in its local session history.
+The bundled example intentionally omits worktrees and launch profiles; it is a
+format demonstration, not a dispatch-ready task. Supply real project values
+before preparation. Shell commands above also work through `rtk proxy` if you
+use RTK; RTK is not an adapter dependency.
+
+## Validated behavior and current limits
+
+Local validation includes a dependent two-writer trial and a completed read-only
+lane in a second project root, each with independently recorded verification.
+The automated suite covers preparation guards, dependency integration, recovery,
+status, installation checks and CLI behavior. Run `npm test` for the current suite.
+
+This is an early local integration. It does not automatically create worktrees,
+dispatch, merge, cancel workflows, or retire resources. Editing a brief changes
+its hash; it does not cancel older workflows. Inspect existing plans before
+creating replacements. Live harness availability and provider/model qualification
+remain Baa-ton's responsibility. Run `herdr_doctor` in the owning root before
+dispatch and investigate unresolved checks.
 
 ## Brief contract
 
@@ -180,3 +259,8 @@ of an earlier lane HEAD. Prepare dependent worktrees after integrating changes.
 The adapter never creates worktrees, calls Baa-ton tools itself, changes Baa-ton
 ledgers, or merges code. Preserve each system's ledger and keep generated state
 local. Use Git local exclusions for `.forgeflow/` and `.pi/herdr-orchestrator/`.
+
+## License
+
+MIT; see [LICENSE](LICENSE). Baa-ton and Forgeflow are separate projects with
+their own installation instructions and licenses.

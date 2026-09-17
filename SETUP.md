@@ -11,7 +11,6 @@ skills. Keep the adapter checkout at a stable path. In Pi's user settings
 (`~/.pi/agent/settings.json`, or your configured agent directory), preserve the
 existing settings and add the absolute adapter `extension.js` path to
 `extensions` if absent. Preserve Baa-ton and Forgeflow extension/skill entries.
-The current machine already has these global registrations.
 
 Global registration makes the extension available to Pi in other projects.
 Alternatively, register its absolute path in the project's `.pi/settings.json`.
@@ -21,7 +20,7 @@ duplicate registrations. Project trust and runtime loading still apply.
 From any directory, run (replace both paths as needed):
 
 ```sh
-rtk proxy node "/path/to/baa-ton forge/check-install.js" --project "/path/to/project"
+node "/path/to/baa-ton-forge/check-install.js" --project "/path/to/project"
 ```
 
 Use `--json` for structured output or `--agent-dir PATH` for a custom Pi agent
@@ -42,7 +41,7 @@ exclude file, preserving existing entries:
 .pi/herdr-orchestrator/
 ```
 
-Find that file with `rtk proxy git rev-parse --git-path info/exclude` from the
+Find that file with `git rev-parse --git-path info/exclude` from the
 target checkout; linked worktrees may share it. Check for already tracked state
 before proceeding: ignore rules do not untrack files. The checker tests an ignored
 probe path and checks for tracked files; inspect custom negation rules separately.
@@ -63,7 +62,7 @@ roots. Never reset an existing root without asking its owner. Registering a new
 root must be authorized; a setup check does not grant that authorization.
 
 After successful authorized registration, enable the installed controller plugin
-with `rtk proxy herdr plugin enable herdr-orchestrator-controller`, then call
+with `herdr plugin enable herdr-orchestrator-controller`, then call
 `herdr_doctor` and report unresolved checks. Do not dispatch during setup.
 
 Confirm these native tools are present in that Pi session:
@@ -73,9 +72,8 @@ Confirm these native tools are present in that Pi session:
   `forgeflow_prepare_lane`, `forgeflow_reconcile_lane`, `forgeflow_verify_lane`.
 
 If missing after `/reload`, restart Pi and resume that project's same session.
-The local `baa-ton-forge-resume` launcher is specific to the adapter development
-root; do not use it for another project. Do not replace missing native tools with
-shell imports or mock APIs.
+Do not use another project's session or root-specific launcher. Do not replace
+missing native tools with shell imports or mock APIs.
 
 ## 4. Preview before dispatch
 

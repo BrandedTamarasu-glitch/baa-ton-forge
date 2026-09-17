@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Local Forgeflow brief previews for Baa-ton",
+  "description": "Pi adapter connecting Forgeflow planning and review to Baa-ton orchestration in Herdr, with checked lane preparation and root verification.",
+  "license": "MIT",
   "pi": { "extensions": ["./extension.js"] },
   "scripts": { "test": "node --test", "preview": "node cli.js" },
   "engines": { "node": ">=20" }
