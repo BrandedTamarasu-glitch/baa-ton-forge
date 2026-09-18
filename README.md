@@ -530,8 +530,11 @@ commit, integrate, dispatch, or clean up resources. After independently resolvin
 the reported gaps under existing authorization and completing validation, use
 `forgeflow_verify_lane` to record the actual evidence. Reconciled mappings without
 a saved preparation baseline require separate provenance investigation; the tool
-does not invent one. Automated Linux/Windows coverage exercises this guidance;
-native Pi qualification remains outstanding.
+does not invent one. Automated Linux/Windows coverage exercises this guidance.
+The [native Linux guidance trial](docs/linux-nested-repository-trial.md#native-verification-guidance)
+confirmed missing-receipt, uncommitted-work, and missing-integration blockers,
+followed by independent root validation and saved verification. This does not
+qualify the current manifest layout in native Windows Pi; that retest remains open.
 
 ### Native preparation preflight
 
