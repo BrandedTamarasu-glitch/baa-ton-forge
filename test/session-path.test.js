@@ -44,7 +44,8 @@ test('session matching rejects missing aliases, relative paths, different files 
   });
   await assert.rejects(assertLiveSession({ kind: 'id', value: f.file }, f.file, {}), /Live root session differs/);
   await assert.rejects(assertLiveSession({ kind: 'path', value: f.file }, f.file, { PI_SESSION_FILE: other }), /PI_SESSION_FILE/);
-  // Do not infer ownership from identical content, session UUIDs, or a missing path.
-  assert.equal(await sameSessionPath(`${f.root}/missing/../Sessions/actual.jsonl`, f.file), false);
+  // Win32 normalizes .. before opening the path; POSIX requires the intermediate
+  // directory to exist. Follow the filesystem's proof, not a cross-platform guess.
+  assert.equal(await sameSessionPath(`${f.root}/missing/../Sessions/actual.jsonl`, f.file), process.platform === 'win32');
   if (process.platform !== 'win32') assert.equal(await sameSessionPath(f.file.toUpperCase(), f.file), false);
 });
