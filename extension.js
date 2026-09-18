@@ -5,6 +5,7 @@ import { prepareLane, revalidate, matchPlan, verifyLane, reconcileLane } from '.
 import { laneStatus, renderStatus } from './status.js';
 import { continuationPreview, renderContinuation } from './continuation.js';
 import { checkContinuation } from './continuation-readiness.js';
+import { registerDispatchOnce } from './dispatch-once.js';
 import { recoverSubmission } from './recovery.js';
 import { nativePreflight } from './preflight.js';
 import { readManifestSnapshot } from './manifest-snapshot.js';
@@ -25,6 +26,7 @@ function renderHandoff(prepared) {
 }
 
 export default function adapter(pi) {
+  if (pi.on) registerDispatchOnce(pi, records);
   const pending = new Map();
   async function recover(params, ctx) {
     if (pending.size) throw new Error('A plan is still in flight; wait for its result');
