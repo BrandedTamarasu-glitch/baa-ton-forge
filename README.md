@@ -340,6 +340,30 @@ of Git ancestry or tests. The slash command may leave a display message in Pi's
 session history but does not start a model turn. If a new tool is absent after
 `/reload`, restart Pi in the same Herdr pane and resume the same owning root session.
 
+### Native preparation preflight
+
+The native `forgeflow_prepare_lane` tool and slash command now perform read-only
+Herdr checks before saving a handoff. They require a version-2 Baa-ton controller
+registration for this checkout and pane/workspace, a live Pi agent whose native
+session matches the current session, and (for `worktreeCwd` tasks) an unoccupied
+registered worktree with a source workspace present in native inventory. A
+read-only task in the controller checkout does not require a separate source
+workspace. The check reads the existing controller config; it never bootstraps,
+repairs registrations, creates workspaces, or substitutes identities.
+
+Root/session/source bindings are saved with the handoff and checked again before
+`herdr_plan` is allowed through. A failed recheck writes no `planning` record.
+If a valid binding changed, prepare again. Older handoffs must be prepared again
+because they contain no native preflight evidence. Missing or stale registrations
+require the owning root or Baa-ton's audited recovery; missing application source
+workspaces require an authorized agent-free workspace repair. Preparation does
+not establish model entitlement, runtime adapter qualification, full doctor health,
+or authorization to dispatch. Baa-ton still validates the actual plan and launch.
+
+Preview and status remain read-only/local: a passed status preparation check does
+not run this native preflight or establish live readiness. Saved owner identity
+includes the Pi session path so status can flag a different session earlier.
+
 For a new task, ask Pi to call `forgeflow_plan_lanes` and then
 `forgeflow_prepare_lane` for the selected task. Review the handoff before asking
 it to call `herdr_plan` and `herdr_dispatch`. Do not replan a completed trial.
@@ -397,9 +421,19 @@ If `herdr_plan` rejected a prepared task with either exact error:
 Ask the **same Pi session branch and pane** to call the native
 `forgeflow_recover_submission` with `filename` and `taskId`.
 It reads the saved assistant tool call, unique failed native result, and original
-planning entry. No matching workflow or saved mapping may exist. The manifest
-must either predate submission or meet the narrowly supported native-observation
-baseline below.
+planning entry. No matching workflow or saved mapping may exist.
+
+New submissions save a manifest fingerprint immediately before the native plan:
+existence, raw SHA-256, canonical state SHA-256, capture time, and owning-session
+identity. Recovery compares that saved baseline directly, including all workflows,
+goals, queues and unknown fields. Only `status` and `lastResponseAt` in the
+identity-matched top-level root `sessionLog` are excluded from the state hash.
+Changes to other root logs or supervisor/goal state remain blocked. A previously
+absent manifest must still be absent. The snapshot is evidence of a read at one
+point in time, not a lock or a grant of planning authority.
+
+Legacy submissions without a fingerprint must either have a manifest predating
+submission or meet the narrowly supported native-observation baseline below.
 
 Use `/forgeflow-status` to confirm the session file before recovery. A new
 session in the correct project and pane still lacks the original planning
