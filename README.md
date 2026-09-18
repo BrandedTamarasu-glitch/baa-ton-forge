@@ -224,9 +224,10 @@ requirements in acceptance criteria and root validation.
 existing `worktreeCwd`; native reconciliation checks its repository-source
 binding separately from the controller session/pane/workspace identity.
 **Baa-ton/Herdr must recognize the application repository's source workspace and
-worktree.** A Forge preparation pass does not establish that native readiness.
-If Baa-ton reports missing source-workspace metadata, investigate its registration
-rather than substituting the parent workspace identity.
+worktree.** Native preparation now checks that binding and can establish a missing
+source workspace for explicit `repoCwd` tasks, as described below. Preview alone
+does not establish readiness. Never substitute the parent controller workspace ID
+for the application's native source ID.
 
 Automated tests cover nested repositories, aliases, integration, dependencies,
 branch drift and native-manifest reconciliation. Windows and live Herdr dispatch
@@ -342,23 +343,59 @@ session history but does not start a model turn. If a new tool is absent after
 
 ### Native preparation preflight
 
-The native `forgeflow_prepare_lane` tool and slash command now perform read-only
+The native `forgeflow_prepare_lane` tool and slash command perform native
 Herdr checks before saving a handoff. They require a version-2 Baa-ton controller
 registration for this checkout and pane/workspace, a live Pi agent whose native
 session matches the current session, and (for `worktreeCwd` tasks) an unoccupied
 registered worktree with a source workspace present in native inventory. A
 read-only task in the controller checkout does not require a separate source
-workspace. The check reads the existing controller config; it never bootstraps,
-repairs registrations, creates workspaces, or substitutes identities.
+workspace. The check reads the existing controller config and never bootstraps
+or replaces a controller root or substitutes identities.
+
+For an explicit `repoCwd` task, preparation automatically establishes a missing
+application source workspace. It first validates root/session ownership, the
+clean declared repository, and the distinct unoccupied linked target. It reuses
+a valid existing native binding. If the source is absent, it calls the supported
+`herdr workspace create --cwd <repoCwd> --label ... --no-focus` path, then checks
+the returned ID against fresh worktree and workspace inventories. This opens a
+shell workspace, not another agent or controller root; it does not change focus,
+create a Git worktree, grant repository trust, or dispatch work. Native source
+checkout must equal `repoCwd` before automatic creation is allowed.
+
+Use `createSourceWorkspace: false` on the native preparation tool to require
+read-only native checks with no resource creation. The slash command uses the
+automatic default. Tasks without explicit `repoCwd` retain read-only preflight.
+
+Creation is serialized across cooperating Forge roots/worktrees using a lock in
+the application's common Git directory. Intent and verified binding evidence,
+including the owning root/session, are saved under
+`<git-common-dir>/forgeflow-source-workspaces/`, outside versioned files. Forge
+rechecks native inventory under the lock and records intent before creation.
+Lost responses, malformed output, or a crash never trigger blind creation retries.
+An existing valid native binding can still be reused; an unresolved creation with
+no binding blocks and identifies its audit file. A leftover crash lock requires
+inspection; do not delete it while setup may still be running. Forge neither
+closes source workspaces nor edits historical Baa-ton bindings. The lock cannot
+serialize unrelated manual Herdr commands; inconsistent native inventory fails
+closed rather than being repaired automatically.
 
 Root/session/source bindings are saved with the handoff and checked again before
 `herdr_plan` is allowed through. A failed recheck writes no `planning` record.
 If a valid binding changed, prepare again. Older handoffs must be prepared again
-because they contain no native preflight evidence. Missing or stale registrations
-require the owning root or Baa-ton's audited recovery; missing application source
-workspaces require an authorized agent-free workspace repair. Preparation does
+if they contain no native preflight evidence. This update also normalizes a
+short-path or aliased controller cwd in repository preview fingerprints; rerun
+preview and preparation for unsubmitted tasks from such aliases. Fingerprints
+for roots already using canonical paths and historical records are preserved.
+Missing or stale registrations
+require the owning root or Baa-ton's audited recovery. Source setup happens only
+during preparation; the submission recheck never creates resources. Preparation does
 not establish model entitlement, runtime adapter qualification, full doctor health,
 or authorization to dispatch. Baa-ton still validates the actual plan and launch.
+
+The automatic binding tests exercise real nested Git checkouts with a fixture
+Herdr transport. See the [native Windows regression procedure](docs/windows-source-workspace-trial.md)
+for the separate end-to-end check through actual `herdr_plan`. A passing portable
+CI test is not live Windows qualification.
 
 Preview and status remain read-only/local: a passed status preparation check does
 not run this native preflight or establish live readiness. Saved owner identity
