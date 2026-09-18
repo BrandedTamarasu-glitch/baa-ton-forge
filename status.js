@@ -19,10 +19,17 @@ function currentPreparation(prepared, local, current) {
     (!local.planArguments.worktreeCwd || (typeof nativeReadiness.source?.workspaceId === 'string' && Boolean(nativeReadiness.source.workspaceId)));
 }
 
-function matchesTask(workflow, task, cwd) {
+async function sameCheckout(actual, expected) {
+  if (actual === expected) return true;
+  if (typeof actual !== 'string' || !path.isAbsolute(actual) || !path.isAbsolute(expected)) return false;
+  try { return await realpath(actual) === await realpath(expected); }
+  catch { return false; }
+}
+
+async function matchesTask(workflow, task, cwd) {
   const args = task.planArguments;
   return args && workflow.objective === args.objective &&
-    workflow.cwd === (args.worktreeCwd ?? cwd) &&
+    await sameCheckout(workflow.cwd, args.worktreeCwd ?? cwd) &&
     Array.isArray(workflow.lanes) && workflow.lanes.length === args.lanes.length &&
     workflow.lanes.every((lane, i) => {
       const expected = args.lanes[i];
@@ -63,7 +70,8 @@ export async function laneStatus({ filename, cwd, records = [], sessionFile, env
     const verified = mapped && history.findLast(record => record.kind === 'verified' && record.workflowId === mapped.workflowId);
     const prepared = history.findLast(record => record.kind === 'prepared');
     const submitted = history.findLast(record => record.kind === 'planning' && !submissionRecovered(record, history));
-    const candidates = mapped ? workflows.filter(workflow => workflow.id === mapped.workflowId) : workflows.filter(workflow => matchesTask(workflow, task, root));
+    const matching = mapped ? [] : await Promise.all(workflows.map(workflow => matchesTask(workflow, task, root)));
+    const candidates = mapped ? workflows.filter(workflow => workflow.id === mapped.workflowId) : workflows.filter((workflow, index) => matching[index]);
     const workflow = candidates.length === 1 ? candidates[0] : undefined;
     const binding = workflow?.taskBinding;
     const owner = binding ? { root, sessionFile: binding.rootSessionPath ?? null, paneId: binding.rootPaneId ?? null, workspaceId: binding.workspaceId ?? null } : mapped || prepared || submitted ? { root, sessionFile: (mapped ?? prepared ?? submitted).sessionFile ?? null, paneId: (mapped ?? prepared ?? submitted).paneId ?? null, workspaceId: (mapped ?? prepared ?? submitted).workspaceId ?? null } : null;
@@ -78,7 +86,7 @@ export async function laneStatus({ filename, cwd, records = [], sessionFile, env
     const blockers = [];
     const ownerMismatch = Boolean(owner && (!current.inHerdr || owner.root !== root || owner.paneId !== current.paneId || owner.workspaceId !== current.workspaceId || (owner.sessionFile && owner.sessionFile !== current.sessionFile)));
     const ownerIncomplete = Boolean(workflow && (!binding?.rootSessionPath || !binding?.rootPaneId || !binding?.workspaceId));
-    const mappingMismatch = Boolean(mapped && workflow && !matchesTask(workflow, task, root));
+    const mappingMismatch = Boolean(mapped && workflow && !await matchesTask(workflow, task, root));
     if (ownerMismatch) blockers.push('Current context does not match the owning Herdr root session, pane, or workspace. Switch to that root; do not reset its mapping.');
     if (mapped && !workflow) blockers.push('Mapped workflow is missing or ambiguous in the current manifest; inspect the ledger.');
     if (mappingMismatch) blockers.push('Mapped workflow no longer matches this task’s objective, checkout, lane scope or profile; inspect the ledger.');

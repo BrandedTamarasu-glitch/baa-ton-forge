@@ -218,7 +218,7 @@ test('native tool preview to automatic prepare to guarded plan mapping; submissi
       await writeFile(path.join(f.root, 'journal.txt'), 'Concurrent journal edit during native inspection');
       return f.exec(...args);
     } });
-  assert.equal(report.readiness.state, 'passed', JSON.stringify(report.readiness));
+  assert.equal(report.readiness.state, 'passed', JSON.stringify(report));
   assert.match(report.readiness.checks[0], /unrelated controller edits allowed/);
   assert.equal(await readFile(path.join(f.root, 'README.md'), 'utf8'), 'Concurrent controller instruction edit\n');
   assert.notEqual(git(f.root, 'diff', '--cached'), '');

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, rm, realpath } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, realpath, symlink } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
@@ -64,6 +64,18 @@ test('fresh session finds durable owner and requests reconciliation, not redispa
   assert.equal(task.nextAction.code, 'resume-owning-root');
   const owning = await laneStatus({ ...f, records: [] });
   assert.equal(owning.tasks[0].nextAction.code, 'reconcile-workflow');
+});
+
+test('status recognizes equivalent checkout aliases but rejects a different directory', async t => {
+  const f = await fixture(t);
+  const alias = f.cwd + '-alias';
+  await symlink(f.cwd, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  t.after(() => rm(alias, { force: true, recursive: true }));
+  f.workflow.cwd = alias; await f.save();
+  assert.equal((await laneStatus(f)).tasks[0].nextAction.code, 'verify-completion');
+  assert.equal((await laneStatus({ ...f, records: [] })).tasks[0].nextAction.code, 'reconcile-workflow');
+  f.workflow.cwd = path.dirname(f.cwd); await f.save();
+  assert.equal((await laneStatus(f)).tasks[0].nextAction.code, 'inspect-ledger');
 });
 
 test('stale verification is ignored and ambiguous workflows are never selected', async t => {
