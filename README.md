@@ -172,6 +172,12 @@ tests, which use a fixture Herdr transport. The separate native Windows
 automatic-binding test for [issue #5](https://github.com/BrandedTamarasu-glitch/baa-ton-forge/issues/5)
 remains outstanding.
 
+The [Linux dirty-controller regression](docs/linux-nested-repository-trial.md#dirty-controller-native-regression)
+also passed native preparation, source reuse, actual planning and read-only
+readiness while an unrelated controller journal changed. Application/lane
+checkouts remained clean and HEADs/index unchanged. This trial stopped before
+dispatch; its configured Haiku profile was not runtime-qualified.
+
 This is an early local integration. Dispatch requires an explicit user-confirmed
 handoff or a separately authorized native Baa-ton call. It does not automatically
 create worktrees, merge, cancel workflows, or retire resources. Editing a brief changes

@@ -210,6 +210,33 @@ audit writes; automated regressions cover those guard paths. Runtime state stays
 local and Git-excluded. The adapter suite at PR #13 passed 86 tests locally;
 Linux/Windows CI passed the selected cross-platform regression suite.
 
+## Dirty-controller native regression
+
+Recorded 2026-09-18 after [PR #15](https://github.com/BrandedTamarasu-glitch/baa-ton-forge/pull/15).
+This summarizes the owning root's supplied report; the documentation author did
+not rerun the live trial. The separate central controller was `w1E:p1` / `w1E`
+at `/home/corye/Baa-ton`. Doctor warnings concerned older roots/lane bridges;
+the root reported no trial-specific blocker.
+
+| Check | Reported result |
+| --- | --- |
+| Fixture | `.forge-issue5-46c6a9b8e2/`, Git-excluded application, linked writer and trial state |
+| Deliberate controller dirt | Untracked `forge-issue5-46c6a9b8e2-journal.txt` |
+| No-creation preparation | Rejected missing `source_workspace_id`, not controller dirt; no workspace created |
+| Automatic preparation | Created shell-only source workspace `w1F` |
+| Repeat after journal edit | Passed; reused `w1F`, exactly one creation attempt |
+| Planning after another edit | Exact saved arguments accepted; `herdr-58cc1e63` mapped |
+| Native readiness | Prerequisites passed despite dirty controller |
+| Exact configured quick profile | `claude / claude-code / claude-haiku-4-5 / low / subscription` |
+| Git integrity | Application/writer clean with `pending\n`; all HEADs and controller index unchanged; final journal contents preserved |
+
+Existing workflows, profiles and roots were preserved. Resources remain open;
+there was no dispatch or cleanup. This qualifies Linux's actual prepare-to-plan
+path with unrelated controller edits and idempotent source binding. It does not
+qualify the configured Haiku profile at runtime or establish included billing.
+Staged and unstaged controller-edit cases have automated coverage; the live
+trial deliberately left the controller index untouched.
+
 ## Current issue coverage
 
 - [Issue #1](https://github.com/BrandedTamarasu-glitch/baa-ton-forge/issues/1):
