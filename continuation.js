@@ -35,7 +35,9 @@ export function renderContinuation(report) {
     `Snapshot: ${report.sourceSha256}`,
     `Root: ${report.current.root} | Pane: ${report.current.paneId ?? '?'} | Workspace: ${report.current.workspaceId ?? '?'}`,
     `Session: ${report.current.sessionFile ?? 'unknown'}`,
-    'Authorization not assessed; native readiness not checked. No native tools, workflow writes or model turns initiated.',
+    report.readiness ? `Prerequisites: ${report.readiness.state}. Authorization and runtime qualification not assessed. Read-only inspection; no workflow writes or dispatch.` : 'Authorization not assessed; native readiness not checked. No native tools, workflow writes or model turns initiated.',
+    ...(report.readiness?.checks ?? []).map(check => `Checked: ${check}`),
+    ...(report.readiness?.blockers ?? []).map(blocker => `Readiness blocker: ${blocker}`),
     ...report.warnings.map(warning => `Warning: ${warning}`),
     ...(step ? [
       `Proposed next: ${step.taskId} — ${step.label} [${step.category}]`,

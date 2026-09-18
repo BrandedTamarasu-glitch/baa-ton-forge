@@ -324,6 +324,7 @@ The adapter exposes six native model-callable tools:
 | --- | --- | --- |
 | `forgeflow_status` | `filename` | Read-only task, workflow, verification and owning-root snapshot |
 | `forgeflow_continue` | `filename` | Preview one next root step, required checks and stop reason; no execution |
+| `forgeflow_check_readiness` | `filename` | Read-only local/native prerequisite checks; no repair or dispatch |
 | `forgeflow_plan_lanes` | `filename` | Lane preview and saved brief hash |
 | `forgeflow_prepare_lane` | `filename`, `taskId`, optional `createSourceWorkspace` | Checked handoff and saved preparation; automatic source setup by default for explicit `repoCwd` |
 | `forgeflow_reconcile_lane` | `filename`, `taskId`, `workflowId` | Validated recovery of a missing mapping |
@@ -395,6 +396,30 @@ slash command. Like status, it reads local evidence without establishing live
 native readiness or authorization. The slash command can save its display in Pi
 history. Baa-ton retains planning/dispatch ownership, and independent root
 verification remains required. Take a fresh snapshot after any external action.
+
+### Check continuation readiness
+
+After inspecting the preview, use native `forgeflow_check_readiness` with
+`filename`, or:
+
+```text
+/forgeflow-check-readiness "/absolute/path/to/brief.md"
+```
+
+For a selected prepare, plan or dispatch-readiness step, this checks clean
+checkouts, dependency integration and the exact configured profile, then probes
+Herdr root/session identity, source-workspace binding and target availability.
+It never creates a missing source workspace. Planned lanes must still match
+their original saved preparation and native binding; changed evidence blocks.
+Other steps, including wrong-session recovery and completion verification, are
+reported without native probes and must be resolved separately.
+
+`readiness.state` is `passed`, `blocked` or `not-checked`, with check descriptions
+and blockers. A pass is a point-in-time prerequisite result, **not dispatch
+authorization or provider/model runtime qualification**. No login, model request,
+repair, preparation record, planning, dispatch or automatic retry occurs.
+Concurrent detected changes to local evidence or the manifest stop the check;
+the inspection is not a lock. Baa-ton must revalidate before actual dispatch.
 
 ### Native preparation preflight
 
