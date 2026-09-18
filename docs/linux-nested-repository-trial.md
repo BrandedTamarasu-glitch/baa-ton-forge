@@ -52,3 +52,62 @@ This establishes the tested Linux layout, not Windows qualification, arbitrary
 provider compatibility, included subscription billing, or cross-application live
 dependency handling. Local Baa-ton patches used by this trial must be reviewed
 and installed separately; updating Forge alone does not install them.
+
+## Native preparation and submission preflight follow-up
+
+Recorded 2026-09-18 against the update merged in
+[Forge PR #6](https://github.com/BrandedTamarasu-glitch/baa-ton-forge/pull/6).
+These results summarize the owning Pi root's reported native evidence, not a
+fresh test run by the report author.
+
+The first preparation after reload used older extension code: its saved record
+lacked `nativeReadiness` and used the previous handoff message. After a full Pi
+restart in the same owning pane/session, fresh preview succeeded and preparation
+rejected the missing prerequisite:
+
+```text
+Application source workspace is unavailable: missing source_workspace_id; inspect native Herdr metadata before preparing
+```
+
+No Baa-ton planning or dispatch occurred on this rejected preparation. With
+explicit user authorization, the root then created an agent-free application
+source workspace through Herdr. This was a separate setup step, not automatic
+binding by Forge.
+
+| Evidence | Recorded result |
+| --- | --- |
+| Owning root | `w18:p1` / `w18`, original owning Pi session |
+| Source workspace | `w1B`, independently found in native inventory |
+| Repository / target | `apps/sample` / `.worktrees/smoke` |
+| Native preparation record | `5873b021`, saved root/session/source `nativeReadiness` |
+| Prepared commit | `2c8abd6549be37ae5bd8876e52c38f29d9c73aa0` |
+| Exact profile | Read-only; `claude / claude-code / claude-sonnet-5 / high / subscription` |
+| Planning / mapping records | `141cd84f` / `9dbb7d61` |
+| Mapped workflow / task | `herdr-004a739a` / `readme-preparation-check` |
+| Manifest snapshot captured | `2026-09-18T14:23:44.741Z` |
+
+The saved planning snapshot contains these SHA-256 fingerprints:
+
+```text
+raw:   35b640cccef0ff3c122527d9b5d09ce3fac4af2c1c7a29d5fec9eb0ac57cf7a1
+state: f82d3de6fa412f13ea4c7bbd8db917f401f8083471626b5d2ff22fc86caa4cfc
+```
+
+The root reported readiness rechecked before submission and successful mapping
+after `herdr_plan`. It stopped after planning: this follow-up has no dispatch,
+completion receipt, or lane verification. Existing roots, workflows, receipts,
+and historical bindings were preserved; no cleanup was performed. Recovery using
+the new snapshot has automated coverage but was not exercised by a live failed
+submission in this follow-up.
+
+### Remaining issue coverage
+
+- [Issue #1](https://github.com/BrandedTamarasu-glitch/baa-ton-forge/issues/1):
+  explicit `repoCwd` support and the Linux nested-repository writer/review path
+  are demonstrated above. The reported Windows layout remains unqualified.
+- [Issue #5](https://github.com/BrandedTamarasu-glitch/baa-ton-forge/issues/5):
+  preflight now detects absent source binding before submission, but does not
+  automatically create it. Idempotent native binding from the existing controller
+  and a Windows end-to-end regression reaching `herdr_plan` remain outstanding.
+  The separately authorized source-workspace creation above does not satisfy the
+  issue's requirement to avoid manual setup.
