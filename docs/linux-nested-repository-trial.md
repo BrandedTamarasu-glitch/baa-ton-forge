@@ -100,7 +100,7 @@ and historical bindings were preserved; no cleanup was performed. Recovery using
 the new snapshot has automated coverage but was not exercised by a live failed
 submission in this follow-up.
 
-### Remaining issue coverage
+### Issue coverage at the preflight milestone
 
 - [Issue #1](https://github.com/BrandedTamarasu-glitch/baa-ton-forge/issues/1):
   explicit `repoCwd` support and the Linux nested-repository writer/review path
@@ -111,3 +111,56 @@ submission in this follow-up.
   and a Windows end-to-end regression reaching `herdr_plan` remain outstanding.
   The separately authorized source-workspace creation above does not satisfy the
   issue's requirement to avoid manual setup.
+
+## Automatic source-workspace qualification
+
+Recorded 2026-09-18 after
+[Forge PR #8](https://github.com/BrandedTamarasu-glitch/baa-ton-forge/pull/8)
+was merged and the owning Pi session restarted. This section summarizes the
+root's reported native qualification; it is not a new test run by the report
+author. The earlier preflight-only milestone above remains historical evidence.
+
+The initial request selected an unavailable `implementation` profile and stopped
+without creating resources. The user then explicitly authorized the configured
+`quick` profile. Project configuration remained unchanged; no silent substitution
+occurred.
+
+| Evidence | Recorded result |
+| --- | --- |
+| Owning root | `w18:p1` / `w18`, original owning Pi session |
+| Brief / task | `.pi/auto-source-trial/brief.json` / `auto-source-writer` |
+| Exact quick profile | `pi / openai-codex / gpt-5.6-luna / low / subscription` |
+| No-creation check | `createSourceWorkspace: false` rejected missing `source_workspace_id`; native inventory unchanged |
+| Automatic setup | Exactly one shell-only source workspace, `w1C`, matching saved `nativeReadiness` |
+| Repeat preparation | Reused `w1C`; one creation attempt, with unchanged audit hash |
+| Creation attempt | `e09ddbea-ece7-4ad0-9381-67ad901add8a` |
+| Actual native workflow | `herdr-3fc3faf2`, mapped to `auto-source-writer` |
+| Planning record | `8f6ec1a8`, containing `manifestSnapshot` |
+| Mapping record | `093b2ac5` |
+| Application / writer HEAD | Clean at `f86dd5aec53ea9746dd8c95c2e0ea5b71fe1b5bf` |
+| Controller / existing trials | Unchanged and clean |
+
+Unlike the earlier source-workspace repair, this trial required no manual Herdr
+workspace creation. Forge established the source during preparation and reused
+it on retry, then passed the actual Baa-ton planning handoff. The run stopped
+after planning: no dispatch, completion receipt, implementation, push, merge,
+resource closure, or cleanup occurred. Selection of the exact profile is not
+runtime model qualification or evidence of included billing.
+
+The brief, creation audit, session records, and workflow manifest remain local
+and outside versioned application files. The report records identifiers and
+reported outcomes only; it does not copy those runtime files into this repository.
+
+## Current issue coverage
+
+- [Issue #1](https://github.com/BrandedTamarasu-glitch/baa-ton-forge/issues/1):
+  nested-repository support is demonstrated by the Linux writer/review trial.
+  The project owner also reports Zach confirmed resolution after Windows
+  testing. Detailed Windows workflow IDs and command output were not supplied
+  for this report; no broader Windows qualification is inferred.
+- [Issue #5](https://github.com/BrandedTamarasu-glitch/baa-ton-forge/issues/5):
+  automatic creation, reuse, and actual native planning are now qualified on
+  Linux. Portable regression tests pass in both Linux and Windows CI, but use
+  fixture Herdr transport. Keep this issue open until the separate
+  [native Windows automatic-binding regression](windows-source-workspace-trial.md)
+  reaches actual `herdr_plan` without manual source-workspace setup.

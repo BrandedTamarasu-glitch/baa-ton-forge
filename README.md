@@ -38,6 +38,8 @@ preparation and verification-record checks are not involved.
 - Resolves named Baa-ton task profiles into exact launch settings.
 - Requires resolved launch profiles, clean checkouts, and appropriate writer
   worktrees before preparing a lane.
+- Automatically creates or reuses a native application source workspace for
+  explicit `repoCwd` tasks, with audited creation and duplicate prevention.
 - Checks that dependency verification matches the brief and that verified commits
   are integrated into their declared repository and any dependent checkout in that repository.
 - Saves workflow mappings and root verification in the active Pi session branch.
@@ -143,7 +145,20 @@ root verification while leaving the controller checkout unchanged. Its evidence
 preserves an unexplained earlier integration transition accepted by the user;
 that acceptance is not retroactive proof of who performed the transition.
 The trial used local Baa-ton recovery/approval patches described in the report.
-Windows and cross-application live dependencies remain unqualified.
+Zach subsequently confirmed that Windows testing resolved the nested-repository
+problem in [issue #1](https://github.com/BrandedTamarasu-glitch/baa-ton-forge/issues/1),
+as reported by the project owner. This confirmation is specific to that issue;
+it does not qualify every Windows workflow or cross-application live dependency.
+
+The subsequent [automatic source-workspace trial](docs/linux-nested-repository-trial.md#automatic-source-workspace-qualification)
+passed live on Linux: read-only preparation rejected the missing source without
+creating resources; automatic preparation created one shell-only workspace;
+repeat preparation reused it with an unchanged single-attempt audit; and actual
+`herdr_plan` succeeded with a saved mapping and manifest snapshot. It stopped
+before dispatch. Linux and Windows CI also pass the portable source-workspace
+tests, which use a fixture Herdr transport. The separate native Windows
+automatic-binding test for [issue #5](https://github.com/BrandedTamarasu-glitch/baa-ton-forge/issues/5)
+remains outstanding.
 
 This is an early local integration. It does not automatically create worktrees,
 dispatch, merge, cancel workflows, or retire resources. Editing a brief changes
@@ -230,9 +245,10 @@ does not establish readiness. Never substitute the parent controller workspace I
 for the application's native source ID.
 
 Automated tests cover nested repositories, aliases, integration, dependencies,
-branch drift and native-manifest reconciliation. Windows and live Herdr dispatch
-for this multi-repository path still require qualification; the local automated
-suite runs on Linux and uses manifest fixtures, not paid worker sessions.
+branch drift and native-manifest reconciliation. The source-workspace regression
+runs on Linux and Windows CI with a fixture Herdr transport. Linux live trials
+and Zach's Windows confirmation for issue #1 are described above; the new
+automatic source-binding path still needs its own native Windows qualification.
 
 ## Shared Baa-ton worker profiles
 
@@ -308,7 +324,7 @@ The adapter exposes six native model-callable tools:
 | --- | --- | --- |
 | `forgeflow_status` | `filename` | Read-only task, workflow, verification and owning-root snapshot |
 | `forgeflow_plan_lanes` | `filename` | Lane preview and saved brief hash |
-| `forgeflow_prepare_lane` | `filename`, `taskId` | Checked handoff and saved preparation |
+| `forgeflow_prepare_lane` | `filename`, `taskId`, optional `createSourceWorkspace` | Checked handoff and saved preparation; automatic source setup by default for explicit `repoCwd` |
 | `forgeflow_reconcile_lane` | `filename`, `taskId`, `workflowId` | Validated recovery of a missing mapping |
 | `forgeflow_recover_submission` | `filename`, `taskId` | Append evidence for a proven pre-persistence root or missing-source-workspace rejection, allowing fresh preparation |
 | `forgeflow_verify_lane` | `workflowId`, `commit`, `evidence` | Saved root verification |
