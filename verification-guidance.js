@@ -26,9 +26,13 @@ export async function verificationGuidance(options) {
     sourcePath: status.sourcePath, sourceSha256: status.sourceSha256, current: status.current,
     state: 'blocked', checksRun: false, verified: false, blockers: [], evidence: null,
     historicalVerification: task.verification, requiredChecks: [], acceptance: [],
-    next: 'Independently review scope/content, run required checks and record their actual results. Commit/integration require existing authorization; this tool performs neither.' };
+    next: 'Resolve the reported blockers and rerun guidance before recording verification. This report authorizes no dispatch, retry, commit or integration.' };
   if (!['verify-completion', 'none'].includes(task.nextAction.code)) {
-    report.blockers.push(task.nextAction.reason); return report;
+    report.blockers.push(task.nextAction.reason);
+    if (status.manifestReadable && task.laneCount > 0 && task.completionReceipts < task.laneCount)
+      report.blockers.push(`Missing completion evidence: ${task.completionReceipts}/${task.laneCount} durable lane receipts are present. Workflow status (${task.workflowStatus ?? 'unknown'}) does not prove completion.`);
+    report.next = 'Do not begin completion verification or save a verification record. Resolve the reported workflow/ownership prerequisite first; this report authorizes no dispatch or retry.';
+    return report;
   }
   try {
     const preview = await loadPreview(options.filename, { cwd: options.cwd });
@@ -74,6 +78,8 @@ export async function verificationGuidance(options) {
         !isDeepStrictEqual(root, await checkout(options.cwd, { requireClean: !definition.repoCwd })) ||
         !isDeepStrictEqual(status, await laneStatus(options))) throw new Error('Evidence changed during inspection; inspect again');
     report.state = report.blockers.length ? 'blocked' : 'awaiting-independent-validation';
+    if (!report.blockers.length)
+      report.next = 'Independently review scope/content, run required checks and record their actual results. Commit/integration require existing authorization; this tool performs neither.';
   } catch (error) {
     report.evidence = null;
     report.blockers.push(error instanceof Error ? error.message : String(error));

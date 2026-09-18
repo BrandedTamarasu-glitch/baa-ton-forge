@@ -506,6 +506,9 @@ and committed paths relative to the saved preparation baseline. Uncommitted
 work, missing integration, changes outside the declared scope, and unavailable
 baseline evidence are reported as blockers. A separate controller journal may
 remain dirty when the task declares an explicit application `repoCwd`.
+An incomplete workflow reports the missing durable receipt count explicitly and
+stops before suggesting completion verification. An unreadable manifest requires
+investigation; it is not treated as proof that no receipt exists.
 
 The report lists the brief's validation commands and acceptance criteria without
 executing or reviewing them. `awaiting-independent-validation` means these Git
