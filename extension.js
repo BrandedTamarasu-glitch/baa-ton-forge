@@ -34,13 +34,14 @@ export default function adapter(pi) {
     pi.appendEntry(ENTRY, { kind: 'preview', sourcePath: result.sourcePath, sourceSha256: result.sourceSha256 });
     return result;
   }
-  async function prepare(params, ctx) {
+  async function prepare(params, ctx, signal = ctx.signal) {
     const filename = path.resolve(ctx.cwd, params.filename);
     const history = records(ctx);
     const previous = history.findLast(item => item.kind === 'preview' && item.sourcePath === filename);
     const prepared = await prepareLane({ filename, taskId: params.taskId, preview: previous, cwd: ctx.cwd, records: history });
     const sessionFile = ctx.sessionManager.getSessionFile();
-    const nativeReadiness = await nativePreflight({ prepared, sessionFile, exec: pi.exec?.bind(pi), signal: ctx.signal });
+    const nativeReadiness = await nativePreflight({ prepared, sessionFile, exec: pi.exec?.bind(pi), signal, ensureSource: params.createSourceWorkspace !== false });
+    await revalidate(prepared, history);
     const record = { ...prepared, sessionFile, nativeReadiness };
     pi.appendEntry(ENTRY, record);
     return record;
@@ -66,15 +67,15 @@ export default function adapter(pi) {
     { name: 'forgeflow_recover_submission', label: 'Reconcile rejected submission', fields: ['filename', 'taskId'], run: recover, render: record => `Saved no-durable-effect evidence for ${record.taskId}, attempt ${record.toolCallId}. History retained. Run preview and prepare again after the reported planning prerequisite is repaired.`, description: 'Recover only an exact saved pre-persistence herdr_plan root-authorization or missing-source-workspace rejection in this native Pi session. Requires the matching call/result and an unchanged saved pre-submission manifest fingerprint; legacy attempts require an older manifest or exact earlier native workflow observations; fails closed for ambiguous effects. Appends evidence without deleting history, changing the brief, registering roots, planning or dispatching. Run before root migration or other operations change the manifest.' },
     { name: 'forgeflow_status', label: 'Show workflow status', fields: ['filename'], run: status, render: renderStatus, description: 'Read-only status for a brief: current root/session, owning pane/workspace, workflow IDs, durable receipts, saved verification and preparation blockers. Reads only this checkout manifest and current session branch. Does not scan other projects, save records, run tests, prepare or dispatch. Use to detect wrong-root context before acting.' },
     { name: 'forgeflow_plan_lanes', label: 'Preview workflow lanes', fields: ['filename'], run: preview, render: renderPreview, description: 'Preview a structured Forgeflow brief and save its hash in this live Pi session. Returns lane scopes, dependencies, blockers and proposed planning arguments. Does not call Baa-ton, create worktrees, run checks or dispatch. Use this tool before forgeflow_prepare_lane; shell imports do not save session records.' },
-    { name: 'forgeflow_prepare_lane', label: 'Prepare workflow lane', fields: ['filename', 'taskId'], run: prepare, render: renderHandoff, description: 'Validate a previously previewed brief and persist a checked lane handoff in this live Pi session. Requires the uniquely registered Pi root, matching live native session, valid source-workspace inventory for worktree tasks, clean committed checkouts, a distinct linked worktree for writers and explicit repository tasks, and verified dependencies integrated in their declared repositories. Returns exact herdr_plan arguments; does not plan or dispatch. Call herdr_plan separately only under existing authorization.' },
+    { name: 'forgeflow_prepare_lane', label: 'Prepare workflow lane', fields: ['filename', 'taskId'], run: prepare, render: renderHandoff, description: 'Validate a previewed brief and persist a checked handoff. For explicit repoCwd tasks, automatically reuse a valid source workspace or create an unfocused shell-only workspace through Herdr when missing; no agent or second root is launched. Set createSourceWorkspace=false for checks without resource creation. Requires registered root/session ownership, clean linked target and verified integrated dependencies. Creation is audited in repository Git metadata and serialized; ambiguous outcomes stop without automatic creation retries. Returns exact herdr_plan arguments; does not plan, dispatch, close resources or change root registrations.' },
     { name: 'forgeflow_reconcile_lane', label: 'Reconcile workflow mapping', fields: ['filename', 'taskId', 'workflowId'], run: reconcile, description: 'Persist a missing adapter mapping in this live Pi session after validating the durable Baa-ton workflow against the brief and root identity. Use this native tool, not shell imports of prepare.js; shell calls cannot save Pi session records. Does not dispatch or mark verified.' },
     { name: 'forgeflow_verify_lane', label: 'Record root verification', fields: ['workflowId', 'commit', 'evidence'], run: verify, description: 'Persist root verification in this live Pi session after independently checking the lane. Requires a mapped workflow, durable completion receipt, clean lane at the full commit hash, and integration into the declared repository checkout (the root by default). Evidence must describe checks actually rerun and their results. Use this native tool rather than shell imports.' },
   ]) {
     pi.registerTool?.({
       name: definition.name, label: definition.label, description: definition.description,
-      parameters: { type: 'object', properties: Object.fromEntries(definition.fields.map(field => [field, { type: 'string', minLength: 1 }])), required: definition.fields, additionalProperties: false },
+      parameters: { type: 'object', properties: { ...Object.fromEntries(definition.fields.map(field => [field, { type: 'string', minLength: 1 }])), ...(definition.name === 'forgeflow_prepare_lane' ? { createSourceWorkspace: { type: 'boolean', description: 'Allow automatic source-workspace creation for explicit repoCwd tasks (default true). False performs read-only native checks.' } } : {}) }, required: definition.fields, additionalProperties: false },
       execute: async (_id, params, _signal, _update, ctx) => {
-        const record = await definition.run(params, ctx);
+        const record = await definition.run(params, ctx, _signal);
         return { content: [{ type: 'text', text: definition.render ? definition.render(record) : `Saved ${record.kind} record for ${record.taskId} (${record.workflowId}) in this Pi session.` }], details: record };
       },
     });
@@ -105,7 +106,7 @@ export default function adapter(pi) {
     },
   });
   pi.registerCommand('forgeflow-prepare-lane', {
-    description: 'Check a preview lane and display a root planning handoff',
+    description: 'Prepare a preview lane, establishing a missing repoCwd source workspace if needed',
     handler: async (args, ctx) => {
       try {
         const { filename, taskId } = splitTask(args);
