@@ -323,6 +323,7 @@ The adapter exposes six native model-callable tools:
 | Tool | Arguments | Result |
 | --- | --- | --- |
 | `forgeflow_status` | `filename` | Read-only task, workflow, verification and owning-root snapshot |
+| `forgeflow_continue` | `filename` | Preview one next root step, required checks and stop reason; no execution |
 | `forgeflow_plan_lanes` | `filename` | Lane preview and saved brief hash |
 | `forgeflow_prepare_lane` | `filename`, `taskId`, optional `createSourceWorkspace` | Checked handoff and saved preparation; automatic source setup by default for explicit `repoCwd` |
 | `forgeflow_reconcile_lane` | `filename`, `taskId`, `workflowId` | Validated recovery of a missing mapping |
@@ -372,6 +373,28 @@ Baa-ton readiness. Saved verification is historical evidence, not a fresh check
 of Git ancestry or tests. The slash command may leave a display message in Pi's
 session history but does not start a model turn. If a new tool is absent after
 `/reload`, restart Pi in the same Herdr pane and resume the same owning root session.
+
+### Preview root continuation
+
+Use native `forgeflow_continue` with `filename`, or enter:
+
+```text
+/forgeflow-continue "/absolute/path/to/brief.md"
+```
+
+This first version is **preview only**. It reuses status evidence to propose one
+immediate root step, explain required checks and state why execution stops. It
+keeps other tasks' blockers and parent requests visible. It does not forecast a
+chain of future steps whose prerequisites have not yet been checked.
+
+The report includes `mode: "continuation-preview"`, `executionSupported: false`,
+`executed: false`, the brief snapshot, root/session identity, proposed step and
+stop reason. No execution parameter is accepted. It invokes no suggested tools,
+saves no workflow records, creates no resources and starts no model turn from the
+slash command. Like status, it reads local evidence without establishing live
+native readiness or authorization. The slash command can save its display in Pi
+history. Baa-ton retains planning/dispatch ownership, and independent root
+verification remains required. Take a fresh snapshot after any external action.
 
 ### Native preparation preflight
 

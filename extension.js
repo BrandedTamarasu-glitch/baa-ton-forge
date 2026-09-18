@@ -3,6 +3,7 @@ import { realpath } from 'node:fs/promises';
 import { loadPreview, renderPreview } from './planner.js';
 import { prepareLane, revalidate, matchPlan, verifyLane, reconcileLane } from './prepare.js';
 import { laneStatus, renderStatus } from './status.js';
+import { continuationPreview, renderContinuation } from './continuation.js';
 import { recoverSubmission } from './recovery.js';
 import { nativePreflight } from './preflight.js';
 import { readManifestSnapshot } from './manifest-snapshot.js';
@@ -50,6 +51,10 @@ export default function adapter(pi) {
   async function status(params, ctx) {
     return laneStatus({ filename: path.resolve(ctx.cwd, params.filename), cwd: ctx.cwd, records: records(ctx), sessionFile: ctx.sessionManager.getSessionFile() });
   }
+  async function continuePreview(params, ctx) {
+    if (Object.keys(params).some(key => key !== 'filename')) throw new Error('Continuation supports preview only; only filename is accepted');
+    return continuationPreview(await status(params, ctx));
+  }
   async function reconcile(params, ctx) {
     const mapped = await reconcileLane({ filename: path.resolve(ctx.cwd, params.filename), taskId: params.taskId, workflowId: params.workflowId, cwd: ctx.cwd, sessionFile: ctx.sessionManager.getSessionFile() });
     const previous = records(ctx).filter(item => item.kind === 'planned' && (item.workflowId === mapped.workflowId || (item.root === mapped.root && item.sourcePath === mapped.sourcePath && item.taskId === mapped.taskId)));
@@ -65,6 +70,7 @@ export default function adapter(pi) {
     return verified;
   }
   for (const definition of [
+    { name: 'forgeflow_continue', label: 'Preview root continuation', fields: ['filename'], run: continuePreview, render: renderContinuation, description: 'Preview only: explain one immediate next root step from local status evidence, required checks and stop reasons. Execution is not supported. Does not invoke suggested tools, save records, prepare, plan, dispatch, approve, verify or create resources. Authorization and native readiness are not assessed. Baa-ton owns future planning and dispatch; root verification remains independent.' },
     { name: 'forgeflow_recover_submission', label: 'Reconcile rejected submission', fields: ['filename', 'taskId'], run: recover, render: record => `Saved no-durable-effect evidence for ${record.taskId}, attempt ${record.toolCallId}. History retained. Run preview and prepare again after the reported planning prerequisite is repaired.`, description: 'Recover only an exact saved pre-persistence herdr_plan root-authorization or missing-source-workspace rejection in this native Pi session. Requires the matching call/result and an unchanged saved pre-submission manifest fingerprint; legacy attempts require an older manifest or exact earlier native workflow observations; fails closed for ambiguous effects. Appends evidence without deleting history, changing the brief, registering roots, planning or dispatching. Run before root migration or other operations change the manifest.' },
     { name: 'forgeflow_status', label: 'Show workflow status', fields: ['filename'], run: status, render: renderStatus, description: 'Read-only status and next-action advice for a brief: current root/session, owning pane/workspace, workflow IDs, durable receipts and delivery, saved verification, parent requests and preparation blockers. Reads this checkout manifest, local Git evidence and current session branch. Does not establish authorization or live native readiness, scan other projects, save records, run tests, prepare or dispatch. Completed receipts should be independently verified even if notification delivery is pending.' },
     { name: 'forgeflow_plan_lanes', label: 'Preview workflow lanes', fields: ['filename'], run: preview, render: renderPreview, description: 'Preview a structured Forgeflow brief and save its hash in this live Pi session. Returns lane scopes, dependencies, blockers and proposed planning arguments. Does not call Baa-ton, create worktrees, run checks or dispatch. Use this tool before forgeflow_prepare_lane; shell imports do not save session records.' },
@@ -89,6 +95,17 @@ export default function adapter(pi) {
         if (!filename) throw new Error('Usage: /forgeflow-status "path/to/brief.md"');
         const result = await status({ filename }, ctx);
         pi.sendMessage({ customType: 'forgeflow-status', content: renderStatus(result), display: true, details: result }, { triggerTurn: false });
+      } catch (error) { ctx.ui.notify(message(error), 'error'); }
+    },
+  });
+  pi.registerCommand('forgeflow-continue', {
+    description: 'Preview the next root step and stop; never execute',
+    handler: async (args, ctx) => {
+      try {
+        const filename = args.trim().replace(/^"(.*)"$/, '$1');
+        if (!filename) throw new Error('Usage: /forgeflow-continue "path/to/brief.md" (preview only)');
+        const result = await continuePreview({ filename }, ctx);
+        pi.sendMessage({ customType: 'forgeflow-continuation-preview', content: renderContinuation(result), display: true, details: result }, { triggerTurn: false });
       } catch (error) { ctx.ui.notify(message(error), 'error'); }
     },
   });

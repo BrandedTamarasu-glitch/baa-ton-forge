@@ -8,6 +8,7 @@ import { loadPreview } from '../planner.js';
 import { laneStatus, renderStatus } from '../status.js';
 import adapter from '../extension.js';
 import { prepareLane } from '../prepare.js';
+import { continuationPreview } from '../continuation.js';
 
 const env = { HERDR_ENV: '1', HERDR_PANE_ID: 'test:p1', HERDR_WORKSPACE_ID: 'test' };
 async function fixture(t) {
@@ -126,6 +127,20 @@ test('native status and slash command save no adapter records or model turns', a
   assert.equal(messages.length, 1);
   assert.equal(messages[0].options.triggerTurn, false);
   assert.deepEqual(messages[0].message.details, result.details);
+  const before = await readFile(f.manifest);
+  const history = structuredClone(f.records);
+  const continuation = tools.get('forgeflow_continue');
+  assert.equal(continuation.parameters.additionalProperties, false);
+  assert.deepEqual(Object.keys(continuation.parameters.properties), ['filename']);
+  const next = await continuation.execute('continue', { filename: 'brief.json' }, undefined, undefined, ctx);
+  assert.deepEqual(next.details, continuationPreview(result.details));
+  assert.equal(next.details.proposedStep.code, result.details.nextAction.code);
+  await commands.get('forgeflow-continue').handler('"brief.json"', ctx);
+  assert.equal(messages[1].options.triggerTurn, false);
+  assert.deepEqual(messages[1].message.details, next.details);
+  await assert.rejects(continuation.execute('execute', { filename: 'brief.json', execute: true }, undefined, undefined, ctx), /preview only/);
+  assert.deepEqual(await readFile(f.manifest), before);
+  assert.deepEqual(f.records, history);
 });
 
 test('all durable receipts lead to verification even with pending notifications or stale blocked telemetry', async t => {
