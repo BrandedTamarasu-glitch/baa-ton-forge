@@ -19,6 +19,7 @@ function dispatchable(report) {
 export function registerDispatchOnce(pi, records, inspect = checkContinuation) {
   let checking = false;
   let stopThisTurn = false;
+  let armedIntentId = null;
   const append = record => pi.appendEntry(ENTRY, { ...record, recordedAt: new Date().toISOString() });
   const latest = ctx => records(ctx).findLast(item => item.kind === 'dispatch-intent');
   const children = (ctx, intent) => records(ctx).filter(item => item.intentId === intent.intentId);
@@ -64,10 +65,11 @@ export function registerDispatchOnce(pi, records, inspect = checkContinuation) {
           fingerprint: fingerprint(fresh), approval: 'native-ui-confirmed',
           arguments: { workflowId: fresh.proposedStep.workflowId, execute: true } };
         append(intent);
+        armedIntentId = intent.intentId;
         pi.sendMessage({ customType: 'forgeflow-dispatch-handoff', display: true,
           content: `Native user confirmation recorded for one Baa-ton dispatch attempt. Call the registered herdr_dispatch tool once with exactly ${JSON.stringify(intent.arguments)}. Do not use shell imports or a substitute. Do not set confirm or restart. After its result, report it and stop: no retries, verification, integration, cleanup or next-lane progression. If unavailable, stop and report.`,
           details: intent }, { triggerTurn: true });
-      } catch (error) { ctx.ui.notify(message(error), 'error'); }
+      } catch (error) { armedIntentId = null; ctx.ui.notify(message(error), 'error'); }
       finally { checking = false; }
     },
   });
@@ -86,7 +88,7 @@ export function registerDispatchOnce(pi, records, inspect = checkContinuation) {
     }
     if (event.toolName !== 'herdr_dispatch' || !isDeepStrictEqual(event.input, intent.arguments))
       return { block: true, reason: 'Single-dispatch handoff permits only the exact recorded native herdr_dispatch call. Stop rather than substitute another operation.' };
-    if (checking || history.some(item => item.kind === 'dispatch-attempt' || item.kind === 'dispatch-blocked'))
+    if (armedIntentId !== intent.intentId || checking || history.some(item => item.kind === 'dispatch-attempt' || item.kind === 'dispatch-blocked'))
       return { block: true, reason: 'Dispatch handoff is checking, consumed or blocked; inspect the durable audit. No retry.' };
     checking = true;
     try {
@@ -94,6 +96,7 @@ export function registerDispatchOnce(pi, records, inspect = checkContinuation) {
       if (fingerprint(fresh) !== intent.fingerprint) throw new Error('Root, session, checkout, profile or source evidence changed after confirmation');
       append({ ...intent, kind: 'dispatch-attempt', toolCallId: event.toolCallId });
     } catch (error) {
+      armedIntentId = null;
       // A failed audit write must still return a blocking hook result. Throwing
       // here could be treated by the host as an extension error, not a veto.
       try { append({ ...intent, kind: 'dispatch-blocked', toolCallId: event.toolCallId, reason: message(error) }); }
@@ -109,6 +112,7 @@ export function registerDispatchOnce(pi, records, inspect = checkContinuation) {
     const outcome = event.isError ? 'error' : details?.workflow?.id !== attempt.workflowId ? 'unknown'
       : details.cancelled ? 'cancelled' : details.parentApprovalRequired ? 'approval-required'
       : details.dispatched === true && !details.dryRun ? 'dispatch-reported' : 'unknown';
+    armedIntentId = null;
     append({ ...attempt, kind: 'dispatch-result', outcome, isError: Boolean(event.isError),
       resultText: (event.content ?? []).filter(item => item.type === 'text').map(item => item.text).join('\n') });
     stopThisTurn = true;

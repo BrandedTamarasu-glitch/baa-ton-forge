@@ -111,4 +111,12 @@ test('audit write failure vetoes dispatch even when recording the blocker also f
   const result = await f.call();
   assert.equal(result.block, true); assert.match(result.reason, /disk unavailable/);
   assert.equal(f.records.length, 1);
+  f.hooks.get('agent_end')();
+  assert.equal((await f.call()).block, true);
+});
+
+test('reload does not replay a queued intent even before its first tool call', async () => {
+  const f = fixture(); await f.start(); f.install();
+  assert.equal((await f.call()).block, true);
+  assert.equal(f.records.length, 1);
 });
