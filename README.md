@@ -382,7 +382,11 @@ closed rather than being repaired automatically.
 Root/session/source bindings are saved with the handoff and checked again before
 `herdr_plan` is allowed through. A failed recheck writes no `planning` record.
 If a valid binding changed, prepare again. Older handoffs must be prepared again
-because they contain no native preflight evidence. Missing or stale registrations
+if they contain no native preflight evidence. This update also normalizes a
+short-path or aliased controller cwd in repository preview fingerprints; rerun
+preview and preparation for unsubmitted tasks from such aliases. Fingerprints
+for roots already using canonical paths and historical records are preserved.
+Missing or stale registrations
 require the owning root or Baa-ton's audited recovery. Source setup happens only
 during preparation; the submission recheck never creates resources. Preparation does
 not establish model entitlement, runtime adapter qualification, full doctor health,

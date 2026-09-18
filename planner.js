@@ -59,14 +59,19 @@ export async function loadPreview(filename, { cwd = process.cwd() } = {}) {
   }
   if (brief?.tasks?.some(task => task.repoCwd !== undefined)) {
     metadata.repositoryIds = {};
-    for (const directory of new Set([cwd, ...brief.tasks.map(task => task.repoCwd).filter(value => value !== undefined)])) {
+    const controllerPath = await realpath(cwd);
+    for (const directory of new Set([controllerPath, ...brief.tasks.map(task => task.repoCwd).filter(value => value !== undefined)])) {
       requireValue(typeof directory === 'string' && path.isAbsolute(directory), 'repoCwd must be absolute');
       const canonical = await realpath(directory);
       const { stdout } = await promisify(execFile)('git', ['-C', canonical, 'rev-parse', '--path-format=absolute', '--git-common-dir']);
-      metadata.repositoryIds[path.resolve(directory)] = await realpath(stdout.trim());
+      const commonDir = await realpath(stdout.trim());
+      metadata.repositoryIds[path.resolve(directory)] = commonDir;
     }
-    metadata.defaultRepositoryId = metadata.repositoryIds[path.resolve(cwd)];
+    metadata.defaultRepositoryId = metadata.repositoryIds[controllerPath];
     metadata.briefSha256 ??= sha(source);
+    // The caller cwd can be a Windows short path or a directory alias, while
+    // preparation stores its real path. Normalize that key while retaining the
+    // existing fingerprint format for roots already using canonical paths.
     metadata.sourceSha256 = sha(JSON.stringify([metadata.sourceSha256, metadata.repositoryIds, metadata.defaultRepositoryId]));
   }
   return buildPreview(brief, metadata, config);

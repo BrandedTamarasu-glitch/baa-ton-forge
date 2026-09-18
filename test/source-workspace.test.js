@@ -96,6 +96,8 @@ test('canonical root manifest and worktree identity accept directory aliases wit
   const targetAlias = path.join(path.dirname(f.root), 'writer alias');
   await symlink(f.root, alias, process.platform === 'win32' ? 'junction' : 'dir');
   await symlink(f.target, targetAlias, process.platform === 'win32' ? 'junction' : 'dir');
+  assert.equal((await loadPreview(f.filename, { cwd: alias })).sourceSha256,
+    (await loadPreview(f.filename, { cwd: f.prepared.root })).sourceSha256);
   f.native.config.orchestrators[0].program.id = alias;
   f.native.config.orchestrators[0].program.parent_manifest_path = path.join(alias, '.pi/herdr-orchestrator/manifest.json');
   await writeFile(f.native.configPath, JSON.stringify(f.native.config));
