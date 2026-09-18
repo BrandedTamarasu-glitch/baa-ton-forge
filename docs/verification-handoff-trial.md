@@ -1,5 +1,11 @@
 # Native verification handoff trial
 
+The [reported Linux run](linux-nested-repository-trial.md#native-verification-handoff)
+demonstrated fresh root validation, evidence-linked drafting, a separate review
+display and a subsequent saved verification on 2026-09-18. That report identifies
+the confirmation/provenance details and negative paths not shown in the supplied
+transcript; it does not claim every step below has been live-qualified.
+
 Use an existing disposable completed task in its exact owning Pi root/session.
 Fully restart Pi after updating Forge. This trial validates the new handoff;
 the earlier verification-guidance trial did not qualify its model turn or UI.
