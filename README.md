@@ -347,13 +347,14 @@ need root review. Scope instructions do not provide filesystem isolation.
 
 ## Prepare and record a lane
 
-The adapter exposes six native model-callable tools:
+The adapter exposes these native model-callable tools:
 
 | Tool | Arguments | Result |
 | --- | --- | --- |
 | `forgeflow_status` | `filename` | Read-only task, workflow, verification and owning-root snapshot |
 | `forgeflow_continue` | `filename` | Preview one next root step, required checks and stop reason; no execution |
 | `forgeflow_check_readiness` | `filename` | Read-only local/native prerequisite checks; no repair or dispatch |
+| `forgeflow_verification_guidance` | `filename`, `taskId` | Read-only completion prerequisites and required validation; no verification saved |
 | `forgeflow_plan_lanes` | `filename` | Lane preview and saved brief hash |
 | `forgeflow_prepare_lane` | `filename`, `taskId`, optional `createSourceWorkspace` | Checked handoff and saved preparation; automatic source setup by default for explicit `repoCwd` |
 | `forgeflow_reconcile_lane` | `filename`, `taskId`, `workflowId` | Validated recovery of a missing mapping |
@@ -489,6 +490,37 @@ exercised confirmation, one native dispatch, audit recording, receipt delivery,
 and a separate root verification phase. If a worker leaves uncommitted edits,
 inspect them and obtain authorization for commit/integration before saving native
 verification. A completion receipt does not guarantee a clean or committed result.
+
+### Inspect completion before verification
+
+After a durable completion receipt, use the owning Pi session:
+
+```text
+/forgeflow-verification-guidance "/absolute/path/to/brief.json" task-id
+```
+
+The native `forgeflow_verification_guidance` tool accepts the same `filename`
+and `taskId`. It checks current ownership and mapping, then inspects lane and
+application HEADs, branch identity, working-tree status, integration ancestry,
+and committed paths relative to the saved preparation baseline. Uncommitted
+work, missing integration, changes outside the declared scope, and unavailable
+baseline evidence are reported as blockers. A separate controller journal may
+remain dirty when the task declares an explicit application `repoCwd`.
+
+The report lists the brief's validation commands and acceptance criteria without
+executing or reviewing them. `awaiting-independent-validation` means these Git
+prerequisites passed, not that the implementation is correct. Content, tests,
+runtime qualification, and authorization still require independent root review.
+The snapshot does not lock files or prove unchanged contents of already-dirty
+files. Existing verification is labeled historical and is never refreshed.
+
+This command does not start a model turn, write workflow records, probe Herdr,
+commit, integrate, dispatch, or clean up resources. After independently resolving
+the reported gaps under existing authorization and completing validation, use
+`forgeflow_verify_lane` to record the actual evidence. Reconciled mappings without
+a saved preparation baseline require separate provenance investigation; the tool
+does not invent one. Automated Linux/Windows coverage exercises this guidance;
+native Pi qualification remains outstanding.
 
 ### Native preparation preflight
 
