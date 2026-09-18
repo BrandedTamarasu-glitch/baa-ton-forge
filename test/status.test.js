@@ -9,6 +9,7 @@ import { laneStatus, renderStatus } from '../status.js';
 import adapter from '../extension.js';
 import { prepareLane } from '../prepare.js';
 import { continuationPreview } from '../continuation.js';
+import { verificationGuidance, renderVerificationGuidance } from '../verification-guidance.js';
 
 const env = { HERDR_ENV: '1', HERDR_PANE_ID: 'test:p1', HERDR_WORKSPACE_ID: 'test' };
 async function fixture(t) {
@@ -48,6 +49,31 @@ test('status distinguishes receipts from historical root verification without ch
   assert.equal(report.nextAction, null);
   assert.match(renderStatus(report), /historical evidence; tests were not rerun/);
   assert.equal(await readFile(f.manifest, 'utf8'), before);
+});
+
+test('verification guidance explains missing completion before suggesting validation', async t => {
+  const f = await fixture(t);
+  delete f.workflow.lanes[0].completionReceipt;
+  const recordsBefore = structuredClone(f.records);
+  for (const state of ['planned', 'running', 'completed']) {
+    f.workflow.status = state; await f.save();
+    const manifestBefore = await readFile(f.manifest);
+    const report = await verificationGuidance({ ...f, taskId: 'review' });
+    assert.equal(report.state, 'blocked');
+    assert.equal(report.evidence, null);
+    assert.equal(report.verified, false);
+    assert.equal(report.checksRun, false);
+    assert.match(renderVerificationGuidance(report), /Missing completion evidence: 0\/1 durable lane receipts/);
+    assert.match(report.next, /Do not begin completion verification/);
+    assert.doesNotMatch(report.next, /Independently review scope\/content, run required checks/);
+    assert.deepEqual(await readFile(f.manifest), manifestBefore);
+    assert.deepEqual(f.records, recordsBefore);
+  }
+  const foreign = await verificationGuidance({ ...f, taskId: 'review', sessionFile: '/foreign' });
+  assert.match(foreign.blockers[0], /matching Herdr pane, workspace and native session/);
+  await writeFile(f.manifest, 'invalid manifest');
+  const unreadable = await verificationGuidance({ ...f, taskId: 'review' });
+  assert.doesNotMatch(unreadable.blockers.join(' '), /Missing completion evidence: 0\//);
 });
 
 test('fresh session finds durable owner and requests reconciliation, not redispatch', async t => {
