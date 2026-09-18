@@ -94,7 +94,10 @@ export function registerDispatchOnce(pi, records, inspect = checkContinuation) {
       if (fingerprint(fresh) !== intent.fingerprint) throw new Error('Root, session, checkout, profile or source evidence changed after confirmation');
       append({ ...intent, kind: 'dispatch-attempt', toolCallId: event.toolCallId });
     } catch (error) {
-      append({ ...intent, kind: 'dispatch-blocked', toolCallId: event.toolCallId, reason: message(error) });
+      // A failed audit write must still return a blocking hook result. Throwing
+      // here could be treated by the host as an extension error, not a veto.
+      try { append({ ...intent, kind: 'dispatch-blocked', toolCallId: event.toolCallId, reason: message(error) }); }
+      catch { stopThisTurn = true; }
       return { block: true, reason: message(error) };
     } finally { checking = false; }
   });

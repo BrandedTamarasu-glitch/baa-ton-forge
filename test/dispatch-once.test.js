@@ -20,7 +20,7 @@ function fixture() {
   const inspect = async () => { probes++; return structuredClone(report); };
   const install = () => registerDispatchOnce(pi, () => records, inspect);
   install();
-  return { records, commands, hooks, messages, notices, report, ctx, install,
+  return { pi, records, commands, hooks, messages, notices, report, ctx, install,
     get probes() { return probes; }, set approve(value) { approve = value; }, set available(value) { available = value; },
     start: () => commands.get('forgeflow-dispatch-once').handler('"brief.json"', ctx),
     call: (input = { workflowId: 'herdr-one', execute: true }, id = 'call-1', toolName = 'herdr_dispatch') => hooks.get('tool_call')({ toolName, input, toolCallId: id }, ctx),
@@ -103,4 +103,12 @@ test('concurrent confirmations and tool calls cannot create duplicate intents or
   const results = await Promise.all([f.call(undefined, 'first'), f.call(undefined, 'second')]);
   assert.equal(results.filter(item => item?.block).length, 1);
   assert.equal(f.records.filter(item => item.kind === 'dispatch-attempt').length, 1);
+});
+
+test('audit write failure vetoes dispatch even when recording the blocker also fails', async () => {
+  const f = fixture(); await f.start();
+  f.pi.appendEntry = () => { throw new Error('disk unavailable'); };
+  const result = await f.call();
+  assert.equal(result.block, true); assert.match(result.reason, /disk unavailable/);
+  assert.equal(f.records.length, 1);
 });
