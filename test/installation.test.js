@@ -19,7 +19,7 @@ async function fixture(t) {
   await writeFile(path.join(project, 'README.md'), 'Second project');
   git('add', 'README.md'); git('commit', '-m', 'Initial');
   const exclude = path.join(project, '.git/info/exclude');
-  await writeFile(exclude, '.forgeflow/\n.pi/herdr-orchestrator/\n');
+  await writeFile(exclude, '.forgeflow/\n.pi/herdr-orchestrator/\n.baa-ton/herdr-orchestrator/\n');
   await writeFile(path.join(agentDir, 'settings.json'), JSON.stringify({ extensions: [extension] }));
   return { project, agentDir, env: {}, exclude, git };
 }
@@ -44,7 +44,7 @@ test('state exclusions are required and cannot hide already tracked state', asyn
   await mkdir(path.join(f.project, '.forgeflow'));
   await writeFile(path.join(f.project, '.forgeflow/state.json'), '{}');
   f.git('add', '.forgeflow');
-  await writeFile(f.exclude, '.forgeflow/\n.pi/herdr-orchestrator/\n');
+  await writeFile(f.exclude, '.forgeflow/\n.pi/herdr-orchestrator/\n.baa-ton/herdr-orchestrator/\n');
   const check = (await checkInstallation(f)).checks.find(c => c.name === 'local-state:.forgeflow');
   assert.equal(check.status, 'fail');
   assert.match(check.detail, /tracked/);

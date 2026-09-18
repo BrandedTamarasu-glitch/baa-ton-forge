@@ -1,7 +1,7 @@
 import { lstat, readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
+import { resolveManifestPath } from './manifest-path.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 function canonical(value) {
@@ -22,7 +22,7 @@ function stateHash(manifest, owner) {
   return hash(JSON.stringify(canonical(state)));
 }
 export async function readManifestSnapshot(root, owner) {
-  const filename = path.join(root, '.pi/herdr-orchestrator/manifest.json');
+  const filename = await resolveManifestPath(root);
   let before;
   try { before = await lstat(filename); }
   catch (error) {
@@ -34,7 +34,8 @@ export async function readManifestSnapshot(root, owner) {
   const manifest = JSON.parse(bytes);
   if (![1, 2].includes(manifest.version) || !Array.isArray(manifest.workflows)) throw new Error('Cannot snapshot an invalid Baa-ton manifest');
   const after = await lstat(filename);
-  if (['ino', 'dev', 'mtimeMs', 'ctimeMs', 'size'].some(key => before[key] !== after[key])) throw new Error('Manifest changed during snapshot; retry preparation');
+  if (['ino', 'dev', 'mtimeMs', 'ctimeMs', 'size'].some(key => before[key] !== after[key]) || await resolveManifestPath(root) !== filename)
+    throw new Error('Manifest changed during snapshot; retry preparation');
   return { snapshot: { version: 1, path: filename, exists: true, capturedAt: new Date().toISOString(), owner,
     rawSha256: hash(bytes), stateSha256: stateHash(manifest, owner) }, manifest };
 }
@@ -42,7 +43,7 @@ export async function readManifestSnapshot(root, owner) {
 export function assertSnapshotUnchanged(saved, current, started, owner) {
   if (saved?.version !== 1 || saved.path !== current.path || typeof saved.exists !== 'boolean' ||
       !isDeepStrictEqual(saved.owner, owner) || !Number.isFinite(Date.parse(saved.capturedAt)) ||
-      Date.parse(saved.capturedAt) > started) throw new Error('Saved pre-submission manifest snapshot is invalid');
+      Date.parse(saved.capturedAt) > started) throw new Error('Saved pre-submission manifest snapshot is invalid or selected path differs from the saved snapshot');
   if (saved.exists !== current.exists || (saved.exists &&
       (!/^[a-f0-9]{64}$/.test(saved.stateSha256 ?? '') || saved.stateSha256 !== current.stateSha256)))
     throw new Error('Manifest differs from the saved pre-submission snapshot; inspect durable effects before retrying');

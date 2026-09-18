@@ -39,6 +39,7 @@ exclude file, preserving existing entries:
 ```gitignore
 .forgeflow/
 .pi/herdr-orchestrator/
+.baa-ton/herdr-orchestrator/
 ```
 
 Find that file with `git rev-parse --git-path info/exclude` from the

@@ -8,7 +8,7 @@ export async function nativeFixture(f, env) {
   const config = { version: 2, owner: 'herdr-orchestrator', orchestrators: [{
     id: 'registered-root', root: { pane_id: env.HERDR_PANE_ID, workspace_id: env.HERDR_WORKSPACE_ID,
       target: env.HERDR_PANE_ID, target_kind: 'pane_id', agent_kind: 'pi' },
-    program: { id: f.root, workspace_id: env.HERDR_WORKSPACE_ID, parent_manifest_path: path.join(f.root, '.pi/herdr-orchestrator/manifest.json') },
+    program: { id: f.root, workspace_id: env.HERDR_WORKSPACE_ID, parent_manifest_path: path.join(f.root, f.manifestDirectory ?? '.pi/herdr-orchestrator', 'manifest.json') },
     workflows: [],
   }] };
   const configPath = path.join(configDir, 'config.json');

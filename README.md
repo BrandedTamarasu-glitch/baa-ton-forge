@@ -374,6 +374,14 @@ Before acting in an unfamiliar session, use `forgeflow_status` or:
 ```
 
 Status reads this checkout's Baa-ton manifest and the current Pi session branch.
+Current Baa-ton stores the manifest at `.baa-ton/herdr-orchestrator/manifest.json`;
+Forge also supports existing roots using `.pi/herdr-orchestrator/manifest.json`.
+All manifest readers share this resolution, and native preparation validates the
+controller's registered manifest against these checkout-local locations. Two
+separate manifests are ambiguous: Forge stops for inspection without selecting,
+merging, moving, or deleting either ledger. An invalid current manifest does not
+cause fallback to legacy state. Saved recovery snapshots remain bound to their
+original manifest path.
 It shows workflow IDs, owning sessions/panes/workspaces, completion receipts,
 saved verification, dependencies, and preparation blockers. A receipt is never
 reported as root verification. Changed brief hashes invalidate old records for
@@ -715,7 +723,9 @@ of an earlier lane HEAD. Prepare dependent worktrees after integrating changes.
 
 The adapter never creates worktrees, calls Baa-ton tools itself, changes Baa-ton
 ledgers, or merges code. Preserve each system's ledger and keep generated state
-local. Use Git local exclusions for `.forgeflow/` and `.pi/herdr-orchestrator/`.
+local. Use Git local exclusions for `.forgeflow/`, `.baa-ton/herdr-orchestrator/`,
+and legacy `.pi/herdr-orchestrator/`. Exclude the runtime subdirectory rather than
+all of `.baa-ton/`, which may contain project configuration.
 
 ## License
 

@@ -4,6 +4,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 import path from 'node:path';
+import { manifestDirectories } from './manifest-path.js';
 
 const exec = promisify(execFile);
 const adapterPath = fileURLToPath(new URL('./extension.js', import.meta.url));
@@ -22,7 +23,7 @@ export async function checkInstallation({ project = process.cwd(), agentDir = pr
     await git('rev-parse', '--verify', 'HEAD');
     add('committed-head', 'pass', 'Repository has a committed HEAD');
     add('clean-checkout', (await git('status', '--porcelain')).length ? 'warn' : 'pass', 'Lane preparation requires a clean checkout');
-    for (const directory of ['.forgeflow', '.pi/herdr-orchestrator']) {
+    for (const directory of ['.forgeflow', ...manifestDirectories]) {
       const tracked = await git('ls-files', '--', directory);
       let ignored = false;
       try { await git('check-ignore', '-q', '--', `${directory}/.adapter-install-probe`); ignored = true; }

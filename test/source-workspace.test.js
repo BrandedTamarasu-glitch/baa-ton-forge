@@ -13,7 +13,7 @@ import { checkContinuation } from '../continuation-readiness.js';
 
 const env = { HERDR_ENV: '1', HERDR_PANE_ID: 'fixture:p1', HERDR_WORKSPACE_ID: 'fixture' };
 const git = (cwd, ...args) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-async function fixture(t) {
+async function fixture(t, manifestDirectory = '.pi/herdr-orchestrator') {
   const base = await mkdtemp(path.join(os.tmpdir(), 'forge nested source '));
   t.after(() => rm(base, { recursive: true, force: true }));
   const root = path.join(base, 'controller'), repository = path.join(root, 'apps', 'sample');
@@ -24,7 +24,7 @@ async function fixture(t) {
     await writeFile(path.join(dir, 'README.md'), '# Trial\n');
     git(dir, 'add', 'README.md'); git(dir, 'commit', '-m', 'Baseline');
   }
-  await writeFile(path.join(root, '.git/info/exclude'), 'apps/\n.pi/\n');
+  await writeFile(path.join(root, '.git/info/exclude'), 'apps/\n.pi/\n.baa-ton/herdr-orchestrator/\n');
   git(repository, 'worktree', 'add', '-b', 'writer', target);
   const filename = path.join(base, 'brief.json');
   await writeFile(filename, JSON.stringify({ version: 1, objective: 'Nested test', acceptance: ['Scoped change'], tasks: [{
@@ -32,7 +32,7 @@ async function fixture(t) {
     agentKind: 'pi', launchProfile: { provider: 'openai-codex', model: 'gpt-5.5', thinking: 'medium', auth: 'subscription' },
   }] }));
   const prepared = await prepareLane({ filename, taskId: 'writer', cwd: root, env, preview: await loadPreview(filename, { cwd: root }) });
-  const native = await nativeFixture({ root, target }, env);
+  const native = await nativeFixture({ root, target, manifestDirectory }, env);
   Object.assign(native.responses.worktree.source, { source_checkout_path: repository, repo_root: repository, repo_key: path.join(repository, '.git') });
   delete native.responses.worktree.source.source_workspace_id;
   native.responses.workspace.workspaces = [];
@@ -175,8 +175,12 @@ test('removed completed source may be replaced, but a still-live unbound source 
   assert.equal((await f.audit()).attempts.length, 2);
 });
 
-test('native tool preview to automatic prepare to guarded plan mapping; submission never creates sources', async t => {
-  const f = await fixture(t), entries = [], tools = new Map(), events = new Map();
+for (const directory of ['.pi/herdr-orchestrator', '.baa-ton/herdr-orchestrator'])
+test(`native preparation and guarded planning use ${directory}; submission never creates sources`, async t => {
+  const f = await fixture(t, directory), entries = [], tools = new Map(), events = new Map();
+  const manifestPath = path.join(f.prepared.root, directory, 'manifest.json');
+  await mkdir(path.dirname(manifestPath), { recursive: true });
+  await writeFile(manifestPath, JSON.stringify({ version: 2, workflows: [] }));
   const saved = Object.fromEntries(Object.keys(f.native.env).map(key => [key, process.env[key]]));
   Object.assign(process.env, f.native.env);
   t.after(() => { for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
@@ -202,13 +206,12 @@ test('native tool preview to automatic prepare to guarded plan mapping; submissi
   await writeFile(path.join(f.root, 'journal.txt'), 'Concurrent untracked controller journal');
   assert.equal(await events.get('tool_call')(event, ctx), undefined);
   assert.equal(entries.at(-1).data.kind, 'planning');
-  assert.equal(entries.at(-1).data.manifestSnapshot.exists, false);
+  assert.equal(entries.at(-1).data.manifestSnapshot.exists, true);
+  assert.equal(entries.at(-1).data.manifestSnapshot.path, manifestPath);
   // Fixture transport result, not a live Baa-ton qualification.
   events.get('tool_result')({ ...event, details: { workflow: { id: 'herdr-test', cwd: prepared.target } } }, ctx);
   assert.equal(entries.at(-1).data.kind, 'planned');
   assert.equal(f.creations(), 1);
-  const manifestPath = path.join(f.root, '.pi/herdr-orchestrator/manifest.json');
-  await mkdir(path.dirname(manifestPath), { recursive: true });
   await writeFile(manifestPath, JSON.stringify({ workflows: [{ id: 'herdr-test', status: 'planned', cwd: prepared.target,
     objective: prepared.planArguments.objective, lanes: prepared.planArguments.lanes,
     taskBinding: { rootPaneId: env.HERDR_PANE_ID, workspaceId: env.HERDR_WORKSPACE_ID, rootSessionPath: f.native.sessionFile },

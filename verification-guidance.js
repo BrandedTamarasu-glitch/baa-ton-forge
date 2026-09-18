@@ -1,7 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify, isDeepStrictEqual } from 'node:util';
 import { readFile } from 'node:fs/promises';
-import path from 'node:path';
 import { checkout } from './prepare.js';
 import { laneStatus } from './status.js';
 import { loadPreview } from './planner.js';
@@ -44,7 +43,7 @@ export async function verificationGuidance(options) {
       item.taskId === task.taskId && item.root === status.current.root && item.sourcePath === status.sourcePath && item.sourceSha256 === status.sourceSha256);
     if (!mapped) throw new Error('Matching mapping record is missing');
     if (definition.repoCwd && !mapped.repository) throw new Error('Explicit application mapping lacks repository identity; inspect the original mapping');
-    const manifestPath = path.join(status.current.root, '.pi/herdr-orchestrator/manifest.json');
+    const manifestPath = status.manifestPath;
     const manifest = await readFile(manifestPath);
     const root = await checkout(options.cwd, { requireClean: !definition.repoCwd });
     const target = await inspectCheckout(definition.planArguments.worktreeCwd ?? root.root);

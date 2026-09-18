@@ -17,11 +17,11 @@ async function repo(cwd, content) {
   await writeFile(path.join(cwd, 'source.txt'), content);
   git(cwd, 'add', 'source.txt'); git(cwd, 'commit', '-m', 'base');
 }
-async function fixture(t) {
+async function fixture(t, manifestDirectory = '.pi/herdr-orchestrator') {
   const dir = await realpath(await mkdtemp(path.join(os.tmpdir(), 'multi repo ')));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const cwd = path.join(dir, 'workspace'); await repo(cwd, 'controller');
-  await writeFile(path.join(cwd, '.git/info/exclude'), 'apps/\n.forgeflow/\n.pi/\n');
+  await writeFile(path.join(cwd, '.git/info/exclude'), 'apps/\n.forgeflow/\n.pi/\n.baa-ton/herdr-orchestrator/\n');
   const a = path.join(cwd, 'apps/a'), b = path.join(cwd, 'apps/b');
   await repo(a, 'application a'); await repo(b, 'application b');
   const wa = path.join(dir, 'worker a'), wb = path.join(dir, 'worker b');
@@ -32,7 +32,7 @@ async function fixture(t) {
   const filename = path.join(cwd, '.forgeflow/brief.json');
   const save = async () => { await writeFile(filename, JSON.stringify(brief)); return loadPreview(filename, { cwd }); };
   const preview = await save();
-  return { cwd, filename, preview, env, a, b, wa, wb, brief, save };
+  return { cwd, filename, preview, env, a, b, wa, wb, brief, save, manifestDirectory };
 }
 
 test('independent nested repositories prepare from one root and partition identical file scopes', async t => {
@@ -73,8 +73,8 @@ async function complete(f, prepared) {
     taskBinding: { rootSessionPath: '/session', rootPaneId: env.HERDR_PANE_ID, workspaceId: env.HERDR_WORKSPACE_ID },
     worktreeBinding: { repoParent: { checkoutPath: f.a, workspaceId: 'application-workspace' } },
     lanes: prepared.planArguments.lanes.map(lane => ({ ...lane, completionReceipt: { id: 'receipt', summary: 'Complete' } })) };
-  await mkdir(path.join(f.cwd, '.pi/herdr-orchestrator'), { recursive: true });
-  const manifestPath = path.join(f.cwd, '.pi/herdr-orchestrator/manifest.json');
+  await mkdir(path.join(f.cwd, f.manifestDirectory), { recursive: true });
+  const manifestPath = path.join(f.cwd, f.manifestDirectory, 'manifest.json');
   const save = () => writeFile(manifestPath, JSON.stringify({ version: 2, workflows: [flow] })); await save();
   return { mapped, commit, flow, save };
 }
@@ -170,10 +170,13 @@ test('dirty integration checkouts and branch changes cannot pass verification', 
   await assert.rejects(verifyLane(options), /branch changed/);
 });
 
-test('verification guidance distinguishes dirty work, missing integration and independent validation', async t => {
-  const f = await fixture(t), prepared = await prepareLane({ ...f, taskId: 'a' });
+for (const directory of ['.pi/herdr-orchestrator', '.baa-ton/herdr-orchestrator'])
+test(`verification guidance uses ${directory} for dirty work, integration and independent validation`, async t => {
+  const f = await fixture(t, directory), prepared = await prepareLane({ ...f, taskId: 'a' });
   const done = await complete(f, prepared);
   const options = { ...f, taskId: 'a', records: [done.mapped], sessionFile: '/session' };
+  const reconciled = await reconcileLane({ ...options, workflowId: done.mapped.workflowId });
+  assert.equal(reconciled.workflowId, done.mapped.workflowId);
   await writeFile(path.join(f.cwd, 'journal.txt'), 'controller state');
   await writeFile(path.join(f.wa, 'source.txt'), 'uncommitted result');
   let report = await verificationGuidance(options);
@@ -193,7 +196,7 @@ test('verification guidance distinguishes dirty work, missing integration and in
   const verified = await verifyLane({ mapped: done.mapped, cwd: f.cwd, commit: done.commit, evidence: 'Reviewed independently' });
   options.records.push(verified);
   const savedRecords = structuredClone(options.records);
-  const manifestPath = path.join(f.cwd, '.pi/herdr-orchestrator/manifest.json');
+  const manifestPath = path.join(f.cwd, directory, 'manifest.json');
   const manifestBefore = await readFile(manifestPath);
   report = await verificationGuidance(options);
   assert.equal(report.historicalVerification.commit, done.commit);

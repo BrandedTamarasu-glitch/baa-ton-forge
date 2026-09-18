@@ -12,24 +12,24 @@ import { checkContinuation } from '../continuation-readiness.js';
 
 const env = { HERDR_ENV: '1', HERDR_PANE_ID: 'test:p1', HERDR_WORKSPACE_ID: 'test' };
 const git = (cwd, ...args) => execFileSync('git', ['-C', cwd, ...args], { stdio: 'pipe' });
-async function fixture(t) {
+async function fixture(t, manifestDirectory = '.pi/herdr-orchestrator') {
   const base = await realpath(await mkdtemp(path.join(os.tmpdir(), 'continuation readiness ')));
   t.after(() => rm(base, { recursive: true, force: true }));
   const root = path.join(base, 'root'), target = path.join(base, 'worker');
   await mkdir(root); git(root, 'init'); git(root, 'config', 'user.name', 'Test'); git(root, 'config', 'user.email', 'test@example.invalid');
   await writeFile(path.join(root, 'file.txt'), 'base\n'); git(root, 'add', '.'); git(root, 'commit', '-m', 'base');
   git(root, 'worktree', 'add', '-b', 'worker', target);
-  await writeFile(path.join(root, '.git/info/exclude'), '.pi/\n');
+  await writeFile(path.join(root, '.git/info/exclude'), '.pi/\n.baa-ton/herdr-orchestrator/\n');
   const filename = path.join(base, 'brief.json');
   await writeFile(filename, JSON.stringify({ version: 1, objective: 'Trial', acceptance: ['Correct'], tasks: [{ id: 'writer', objective: 'Update file', files: ['file.txt'], checks: ['Inspect'], worktreeCwd: target, launchProfile: { provider: 'openai-codex', model: 'gpt-5.5', thinking: 'medium', auth: 'subscription' } }] }));
   const preview = await loadPreview(filename, { cwd: root });
   const records = [{ kind: 'preview', sourcePath: preview.sourcePath, sourceSha256: preview.sourceSha256 }];
-  const native = await nativeFixture({ root, target }, env);
+  const native = await nativeFixture({ root, target, manifestDirectory }, env);
   const options = { filename, cwd: root, records, env: native.env, sessionFile: native.sessionFile, exec: native.exec };
   const prepared = await prepareLane({ ...options, preview, taskId: 'writer' });
   const readiness = await nativePreflight({ prepared, ...native });
   records.push({ ...prepared, sessionFile: native.sessionFile, nativeReadiness: readiness });
-  const manifest = path.join(root, '.pi/herdr-orchestrator/manifest.json');
+  const manifest = path.join(root, manifestDirectory, 'manifest.json');
   await mkdir(path.dirname(manifest), { recursive: true });
   const workflow = { id: 'herdr-test', cwd: target, objective: prepared.planArguments.objective, status: 'planned', lanes: prepared.planArguments.lanes,
     taskBinding: { rootSessionPath: native.sessionFile, rootPaneId: env.HERDR_PANE_ID, workspaceId: env.HERDR_WORKSPACE_ID },
@@ -40,8 +40,9 @@ async function fixture(t) {
   return { options, native, records, manifest, workflow, save, root, target };
 }
 
-test('mapped planned readiness checks native evidence without writing or bypassing duplicate-plan guard', async t => {
-  const f = await fixture(t), before = await readFile(f.manifest), history = structuredClone(f.records);
+for (const directory of ['.pi/herdr-orchestrator', '.baa-ton/herdr-orchestrator'])
+test(`mapped planned readiness checks ${directory} without writing or bypassing duplicate-plan guard`, async t => {
+  const f = await fixture(t, directory), before = await readFile(f.manifest), history = structuredClone(f.records);
   const report = await checkContinuation(f.options);
   assert.equal(report.readiness.state, 'passed', JSON.stringify(report));
   assert.equal(report.executed, false);
