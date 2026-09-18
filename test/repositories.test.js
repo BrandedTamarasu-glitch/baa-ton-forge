@@ -277,6 +277,16 @@ test('native handoff uses real checkout evidence and the existing verification s
   const verified = entries.at(-1).data;
   assert.equal(verified.kind, 'verified', JSON.stringify(notices));
   assert.equal(verified.commit, done.commit); assert.equal(verified.handoffId, intent.handoffId);
+  assert.equal(verified.verificationMethod, 'handoff');
   assert.match(verified.evidence, /verified change/);
+  const beforeAudit = structuredClone(entries);
+  let audit = (await tools.get('forgeflow_verification_audit').execute('audit', { workflowId: done.mapped.workflowId }, undefined, undefined, ctx)).details;
+  assert.equal(audit.handoffs[0].state, 'saved');
+  assert.equal(audit.handoffs[0].saves[0].confirmation, 'recorded-confirmation');
+  assert.deepEqual(entries, beforeAudit);
+  await tools.get('forgeflow_verify_lane').execute('direct', { workflowId: done.mapped.workflowId, commit: done.commit, evidence: 'Separately reviewed fixture' }, undefined, undefined, ctx);
+  assert.equal(entries.at(-1).data.verificationMethod, 'direct');
+  audit = (await tools.get('forgeflow_verification_audit').execute('audit-again', {}, undefined, undefined, ctx)).details;
+  assert.deepEqual(audit.verifications.map(item => item.method), ['handoff', 'direct']);
   for (const cwd of [f.cwd, f.a, f.wa]) assert.equal(git(cwd, 'status', '--porcelain'), '');
 });

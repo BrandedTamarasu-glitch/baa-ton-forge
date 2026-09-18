@@ -31,6 +31,14 @@ the earlier verification-guidance trial did not qualify its model turn or UI.
    and confirm saving the exact workflow/commit. Inspect the new native record
    for its `handoffId`, `verificationDraftId`, actual evidence and final status.
    Failed/blocked drafts must not offer a successful save.
+7. Run `/forgeflow-verification-audit actual-workflow-id` and the equivalent
+   native `forgeflow_verification_audit` tool. Expect the same read-only report:
+   handoff/draft IDs, actual tool-call/result references and hashes, declined then
+   confirmed decisions, one save attempt and the linked verification entry. No
+   validation command, new confirmation or verification save should occur. The
+   slash command displays a report with no model turn; workflow records stay
+   unchanged. Older handoffs may label confirmation as inferred from a legacy
+   save attempt; do not claim an explicit decision record where none exists.
 
 If the turn stops without a usable draft, inspect its actual session evidence.
 `/forgeflow-cancel-verification` cancels only the local handoff and retains
@@ -42,3 +50,10 @@ Report the workflow/commit, exact owning session, validation tool references,
 draft and save record identifiers, declined-confirmation result, final status
 and any failures. Do not push, redispatch, close resources or clean up as part
 of this qualification.
+
+For an existing completed trial, step 7 can run independently in its owning
+session without repeating validation. Report any missing provenance as a gap;
+do not create another verification merely to make the audit appear complete.
+New-branch absence must be described as unavailable session history, not proof
+that a workflow was never verified. Automated regressions cover incomplete and
+contradictory evidence; do not corrupt live records to reproduce them.

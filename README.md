@@ -356,6 +356,7 @@ The adapter exposes these native model-callable tools:
 | `forgeflow_check_readiness` | `filename` | Read-only local/native prerequisite checks; no repair or dispatch |
 | `forgeflow_verification_guidance` | `filename`, `taskId` | Read-only completion prerequisites and required validation; no verification saved |
 | `forgeflow_verification_evidence` | `handoffId` | Actual root tool-result references from the active verification handoff |
+| `forgeflow_verification_audit` | optional `workflowId` | Read-only current-session handoff, draft, evidence, confirmation and save history |
 | `forgeflow_draft_verification` | `handoffId`, `results` | Requirement assessments linked to root evidence; saves a draft, not verification |
 | `forgeflow_plan_lanes` | `filename` | Lane preview and saved brief hash |
 | `forgeflow_prepare_lane` | `filename`, `taskId`, optional `createSourceWorkspace` | Checked handoff and saved preparation; automatic source setup by default for explicit `repoCwd` |
@@ -615,8 +616,43 @@ must not be reconstructed with fabricated outputs. Historical verification is
 not erased by a failed or cancelled recheck.
 
 Automated regression coverage includes real Git checkouts and both CI platforms.
-The [native handoff trial procedure](docs/verification-handoff-trial.md) is ready;
-live Pi qualification of this new handoff remains outstanding.
+The [native handoff trial procedure](docs/verification-handoff-trial.md) includes
+additional checks beyond the reported Linux run, including declined confirmation
+and saved provenance inspection. Those unreported live paths remain outstanding.
+
+### Verification audit
+
+Inspect the recorded verification chain without starting a model turn:
+
+```text
+/forgeflow-verification-audit herdr-example
+```
+
+Omit the workflow ID to inspect the latest workflow with a handoff, draft or saved
+verification in the current session branch. The equivalent native tool is
+`forgeflow_verification_audit`, with optional `workflowId`. The audit requires no
+brief file and can inspect closed or cancelled handoffs. It does not read another
+session, rerun tests, probe Herdr, change workflow records, save verification or
+authorize a retry. Pi may retain the displayed report in its conversation history.
+
+The report shows all matching handoffs and saved verifications, including:
+
+- Owner context, workflow/commit, handoff and draft IDs, and session entry references.
+- Per-requirement assessment outcomes and their validation tool-call references.
+- Actual native result entry IDs and hashes, with mismatches or missing evidence
+  reported as gaps. These checks inspect recorded outputs, not current code.
+- Explicit confirmed/declined review decisions for new handoffs, save attempts,
+  cancellation and saved verification. An attempt without a saved result remains
+  unresolved; the audit never retries it.
+- `handoff` versus `direct` saves. New direct tool/slash verification records carry
+  a method marker; older records without provenance remain `legacy-unattributed`.
+  An older handoff save attempt can support only
+  `inferred-from-legacy-save-attempt`, not a recorded confirmation interaction.
+
+A matching recorded context is not a fresh native ownership check. Missing records
+in this branch do not prove the workflow was never verified. The audit flags
+ambiguous or inconsistent links rather than repairing records or importing another
+root's history. Root assessment relevance and correctness still require review.
 
 ### Native preparation preflight
 
