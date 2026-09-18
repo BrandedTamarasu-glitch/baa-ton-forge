@@ -108,7 +108,11 @@ async function registeredFixture(t) {
     program: { id: f.root, workspace_id: env.HERDR_WORKSPACE_ID, parent_manifest_path: f.current }, workflows: [] }] };
   await writeFile(configPath, JSON.stringify(config), { mode: 0o600 });
   const historical = { version: 2, workflows: [{ id: 'old', taskBinding: { rootPaneId: 'old:p1', workspaceId: 'old' } }],
-    sessionLog: { kind: 'root', paneId: 'old:p1', workspaceId: 'old' } };
+    sessionLog: { kind: 'root', paneId: 'old:p1', workspaceId: 'old' },
+    rootSessionLogs: [{ rootId: 'old-root', root: { pane_id: 'old:p1', workspace_id: 'old' }, paneId: 'old:p1', workspaceId: 'old' }],
+    parentGoals: { 'old-root': { rootId: 'old-root', supervisor: { rootTurn: { paneId: 'old:p1', workspaceId: 'old' } } } },
+    rootQueues: { version: 1, roots: [{ rootId: 'old-root' }] }, goalHistoryByRoot: { 'old-root': [] },
+    messageRequests: [{ workflowId: 'old' }], questionRequests: [{ workflowId: 'old' }, { paneId: 'old:p1' }] };
   await f.save(f.current); await f.save(f.legacy, JSON.stringify(historical));
   return { ...f, env, config, configPath, historical };
 }
@@ -156,6 +160,9 @@ test('alternate same-root, malformed or unattributed state remains blocked', asy
     { parentGoals: { [rootId]: {} } },
     { parentGoals: { version: 1, roots: [{ rootId }] } },
     { rootQueues: { roots: [{ rootId }] } },
+    { parentGoal: { supervisor: { rootTurn: owner } } },
+    { messageRequests: [{ workflowId: 'unknown' }] },
+    { questionRequests: [{ paneId: owner.paneId }] },
     { goalHistoryByRoot: { [rootId]: [] } },
     { workflows: [{ id: 'unbound' }] },
     { futureRootState: {} },

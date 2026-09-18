@@ -24,7 +24,7 @@ async function assertOtherRoots(filename, mapping) {
   try { manifest = JSON.parse(await readFile(filename, 'utf8')); }
   catch { conflict('alternate ledger is unreadable'); }
   if (!object(manifest) || ![1, 2].includes(manifest.version) || !Array.isArray(manifest.workflows)) conflict('alternate ledger has an unsupported shape');
-  const known = ['version', 'workflows', 'sessionLog', 'rootSessionLogs', 'parentGoals', 'goalHistoryByRoot', 'rootQueues', 'parentGoal', 'goalHistory', 'queue'];
+  const known = ['version', 'workflows', 'sessionLog', 'rootSessionLogs', 'parentGoals', 'goalHistoryByRoot', 'rootQueues', 'parentGoal', 'goalHistory', 'queue', 'questionRequests', 'messageRequests'];
   if (Object.keys(manifest).some(key => !known.includes(key))) conflict('alternate ledger has unknown ownership state');
   const check = (value, key) => {
     if (!object(value)) conflict('invalid root ownership');
@@ -39,6 +39,7 @@ async function assertOtherRoots(filename, mapping) {
     }
     if (pairs.length === 2 && (pairs[0][0] !== pairs[1][0] || pairs[0][1] !== pairs[1][1])) conflict('contradictory root identities');
     if (!(typeof id === 'string' && id) && !pairs.length) conflict('unattributed root state');
+    if (value.supervisor?.rootTurn !== undefined) check(value.supervisor.rootTurn);
   };
   if (manifest.sessionLog !== undefined) {
     if (manifest.sessionLog?.kind !== 'root') conflict('invalid root session log');
@@ -47,6 +48,16 @@ async function assertOtherRoots(filename, mapping) {
   for (const workflow of manifest.workflows) {
     if (!object(workflow) || !object(workflow.taskBinding)) conflict('workflow has no root binding');
     check(workflow.taskBinding);
+  }
+  for (const key of ['questionRequests', 'messageRequests']) {
+    if (manifest[key] === undefined) continue;
+    if (!Array.isArray(manifest[key])) conflict('invalid root request history');
+    for (const request of manifest[key]) {
+      if (!object(request) || request.paneId === mapping.root.pane_id) conflict('invalid or same-root request history');
+      if (request.workflowId !== undefined) {
+        if (manifest.workflows.filter(workflow => workflow.id === request.workflowId).length !== 1) conflict('request has no unique workflow owner');
+      } else if (!manifest.sessionLog) conflict('unscoped request has no root owner');
+    }
   }
   if (manifest.rootSessionLogs !== undefined) {
     if (!Array.isArray(manifest.rootSessionLogs)) conflict('invalid scoped session logs');
@@ -74,6 +85,11 @@ async function assertOtherRoots(filename, mapping) {
   }
   if (['parentGoal', 'goalHistory', 'queue'].some(key => manifest[key] !== undefined) && !manifest.sessionLog)
     conflict('unscoped legacy goal/queue state has no root owner');
+  if (manifest.parentGoal?.supervisor?.rootTurn !== undefined) check(manifest.parentGoal.supervisor.rootTurn);
+  if (manifest.goalHistory !== undefined) {
+    if (!Array.isArray(manifest.goalHistory)) conflict('invalid legacy goal history');
+    for (const goal of manifest.goalHistory) if (goal?.supervisor?.rootTurn !== undefined) check(goal.supervisor.rootTurn);
+  }
 }
 
 // Never merge, migrate, or fall back from a registered ledger. A single layout
