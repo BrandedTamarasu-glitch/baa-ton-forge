@@ -7,6 +7,7 @@ import os from 'node:os';
 import { loadPreview, buildPreview } from '../planner.js';
 import { prepareLane, revalidate, verifyLane, reconcileLane } from '../prepare.js';
 import { laneStatus } from '../status.js';
+import { verificationGuidance } from '../verification-guidance.js';
 const env = { HERDR_ENV: '1', HERDR_PANE_ID: 'controller:p1', HERDR_WORKSPACE_ID: 'controller' };
 const git = (cwd, ...args) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const profile = { provider: 'openai-codex', model: 'test-model', thinking: 'medium', auth: 'subscription' };
@@ -167,4 +168,64 @@ test('dirty integration checkouts and branch changes cannot pass verification', 
   await rm(path.join(f.a, 'unexpected.txt'));
   git(f.a, 'checkout', '-b', 'wrong-integration-branch');
   await assert.rejects(verifyLane(options), /branch changed/);
+});
+
+test('verification guidance distinguishes dirty work, missing integration and independent validation', async t => {
+  const f = await fixture(t), prepared = await prepareLane({ ...f, taskId: 'a' });
+  const done = await complete(f, prepared);
+  const options = { ...f, taskId: 'a', records: [done.mapped], sessionFile: '/session' };
+  await writeFile(path.join(f.cwd, 'journal.txt'), 'controller state');
+  await writeFile(path.join(f.wa, 'source.txt'), 'uncommitted result');
+  let report = await verificationGuidance(options);
+  assert.equal(report.state, 'blocked');
+  assert.match(report.blockers.join(' '), /uncommitted.*not integrated/);
+  assert.equal(report.evidence.commit, done.commit);
+  assert.equal(report.checksRun, false); assert.equal(report.verified, false);
+  assert.deepEqual(report.requiredChecks, ['Inspect source']);
+  await writeFile(path.join(f.wa, 'source.txt'), 'verified change');
+  git(f.a, 'merge', '--ff-only', done.commit);
+  report = await verificationGuidance(options);
+  assert.equal(report.state, 'awaiting-independent-validation', JSON.stringify(report));
+  assert.deepEqual(report.evidence.committedPaths, ['source.txt']);
+  assert.equal(report.evidence.integrated, true);
+  assert.equal(await readFile(path.join(f.cwd, 'journal.txt'), 'utf8'), 'controller state');
+  assert.equal(options.records.length, 1);
+  const verified = await verifyLane({ mapped: done.mapped, cwd: f.cwd, commit: done.commit, evidence: 'Reviewed independently' });
+  options.records.push(verified);
+  const savedRecords = structuredClone(options.records);
+  const manifestPath = path.join(f.cwd, '.pi/herdr-orchestrator/manifest.json');
+  const manifestBefore = await readFile(manifestPath);
+  report = await verificationGuidance(options);
+  assert.equal(report.historicalVerification.commit, done.commit);
+  assert.equal(report.state, 'awaiting-independent-validation');
+  assert.equal(report.verified, false);
+  assert.deepEqual(options.records, savedRecords);
+  assert.deepEqual(await readFile(manifestPath), manifestBefore);
+  await writeFile(path.join(f.a, 'unrelated.txt'), 'dirty integration');
+  assert.match((await verificationGuidance(options)).blockers.join(' '), /integration checkout is dirty/);
+});
+
+test('verification guidance rejects foreign ownership, missing receipts, changed branches and unknown baseline', async t => {
+  const f = await fixture(t), prepared = await prepareLane({ ...f, taskId: 'a' });
+  const done = await complete(f, prepared);
+  const options = { ...f, taskId: 'a', records: [done.mapped], sessionFile: '/session' };
+  assert.equal((await verificationGuidance({ ...options, sessionFile: '/foreign' })).evidence, null);
+  delete done.flow.lanes[0].completionReceipt; await done.save();
+  assert.equal((await verificationGuidance(options)).evidence, null);
+  done.flow.lanes[0].completionReceipt = { id: 'r', summary: 'done' }; await done.save();
+  const reconciled = { ...done.mapped }; delete reconciled.targetHead;
+  assert.match((await verificationGuidance({ ...options, records: [reconciled] })).blockers.join(' '), /baseline is unavailable/);
+  git(f.wa, 'checkout', '-b', 'other');
+  assert.match((await verificationGuidance(options)).blockers.join(' '), /branch changed/);
+});
+
+test('verification guidance reports committed scope violations without treating path checks as verification', async t => {
+  const f = await fixture(t), prepared = await prepareLane({ ...f, taskId: 'a' });
+  const done = await complete(f, prepared);
+  await writeFile(path.join(f.wa, 'outside.txt'), 'outside scope');
+  git(f.wa, 'add', 'outside.txt'); git(f.wa, 'commit', '-m', 'outside scope');
+  const report = await verificationGuidance({ ...f, taskId: 'a', records: [done.mapped], sessionFile: '/session' });
+  assert.match(report.blockers.join(' '), /outside declared scope: outside.txt/);
+  assert.equal(report.evidence.scope, 'outside-declared-scope');
+  assert.equal(report.verified, false);
 });

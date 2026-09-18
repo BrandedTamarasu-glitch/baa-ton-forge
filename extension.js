@@ -6,6 +6,7 @@ import { laneStatus, renderStatus } from './status.js';
 import { continuationPreview, renderContinuation } from './continuation.js';
 import { checkContinuation } from './continuation-readiness.js';
 import { registerDispatchOnce } from './dispatch-once.js';
+import { verificationGuidance, renderVerificationGuidance } from './verification-guidance.js';
 import { recoverSubmission } from './recovery.js';
 import { nativePreflight } from './preflight.js';
 import { readManifestSnapshot } from './manifest-snapshot.js';
@@ -54,6 +55,10 @@ export default function adapter(pi) {
   async function status(params, ctx) {
     return laneStatus({ filename: path.resolve(ctx.cwd, params.filename), cwd: ctx.cwd, records: records(ctx), sessionFile: ctx.sessionManager.getSessionFile() });
   }
+  async function guideVerification(params, ctx) {
+    if (Object.keys(params).some(key => !['filename', 'taskId'].includes(key))) throw new Error('Verification guidance is read-only; only filename and taskId are accepted');
+    return verificationGuidance({ ...params, filename: path.resolve(ctx.cwd, params.filename), cwd: ctx.cwd, records: records(ctx), sessionFile: ctx.sessionManager.getSessionFile() });
+  }
   async function continuePreview(params, ctx) {
     if (Object.keys(params).some(key => key !== 'filename')) throw new Error('Continuation supports preview only; only filename is accepted');
     return continuationPreview(await status(params, ctx));
@@ -77,6 +82,7 @@ export default function adapter(pi) {
     return verified;
   }
   for (const definition of [
+    { name: 'forgeflow_verification_guidance', label: 'Inspect verification prerequisites', fields: ['filename', 'taskId'], run: guideVerification, render: renderVerificationGuidance, description: 'Read-only guidance after durable completion: inspect mapped lane/application HEADs, dirty state, commit ancestry and committed path scope from the saved baseline. List required validation and acceptance criteria without executing them. Does not review content, commit, integrate, save verification, dispatch or probe Herdr. Requires matching current brief and owning session; historical verification is not refreshed.' },
     { name: 'forgeflow_check_readiness', label: 'Check continuation prerequisites', fields: ['filename'], run: readiness, render: renderContinuation, description: 'Read-only native continuation prerequisite inspection. Checks clean checkout, dependency integration, exact saved profile and registered root/session/source binding for the selected prepare/plan/dispatch-review step. Never creates a workspace or invokes planning/dispatch. Does not establish authorization, model entitlement or runtime qualification; Baa-ton remains authoritative for dispatch.' },
     { name: 'forgeflow_continue', label: 'Preview root continuation', fields: ['filename'], run: continuePreview, render: renderContinuation, description: 'Preview only: explain one immediate next root step from local status evidence, required checks and stop reasons. Execution is not supported. Does not invoke suggested tools, save records, prepare, plan, dispatch, approve, verify or create resources. Authorization and native readiness are not assessed. Baa-ton owns future planning and dispatch; root verification remains independent.' },
     { name: 'forgeflow_recover_submission', label: 'Reconcile rejected submission', fields: ['filename', 'taskId'], run: recover, render: record => `Saved no-durable-effect evidence for ${record.taskId}, attempt ${record.toolCallId}. History retained. Run preview and prepare again after the reported planning prerequisite is repaired.`, description: 'Recover only an exact saved pre-persistence herdr_plan root-authorization or missing-source-workspace rejection in this native Pi session. Requires the matching call/result and an unchanged saved pre-submission manifest fingerprint; legacy attempts require an older manifest or exact earlier native workflow observations; fails closed for ambiguous effects. Appends evidence without deleting history, changing the brief, registering roots, planning or dispatching. Run before root migration or other operations change the manifest.' },
@@ -103,6 +109,17 @@ export default function adapter(pi) {
         if (!filename) throw new Error('Usage: /forgeflow-status "path/to/brief.md"');
         const result = await status({ filename }, ctx);
         pi.sendMessage({ customType: 'forgeflow-status', content: renderStatus(result), display: true, details: result }, { triggerTurn: false });
+      } catch (error) { ctx.ui.notify(message(error), 'error'); }
+    },
+  });
+  pi.registerCommand('forgeflow-verification-guidance', {
+    description: 'Inspect completion verification prerequisites without modifying work',
+    handler: async (args, ctx) => {
+      try {
+        const match = args.trim().match(/^(.*?)\s+([a-z][a-z0-9-]*)$/);
+        if (!match) throw new Error('Usage: /forgeflow-verification-guidance "path/to/brief.md" task-id');
+        const result = await guideVerification({ filename: match[1].replace(/^"(.*)"$/, '$1'), taskId: match[2] }, ctx);
+        pi.sendMessage({ customType: 'forgeflow-verification-guidance', content: renderVerificationGuidance(result), display: true, details: result }, { triggerTurn: false });
       } catch (error) { ctx.ui.notify(message(error), 'error'); }
     },
   });

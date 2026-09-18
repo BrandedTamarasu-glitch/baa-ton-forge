@@ -153,6 +153,12 @@ test('native status and slash command save no adapter records or model turns', a
   await assert.rejects(continuation.execute('execute', { filename: 'brief.json', execute: true }, undefined, undefined, ctx), /preview only/);
   assert.deepEqual(await readFile(f.manifest), before);
   assert.deepEqual(f.records, history);
+  const guidance = await tools.get('forgeflow_verification_guidance').execute('guide', { filename: 'brief.json', taskId: 'review' }, undefined, undefined, ctx);
+  assert.equal(guidance.details.mode, 'verification-guidance');
+  assert.equal(guidance.details.verified, false);
+  await commands.get('forgeflow-verification-guidance').handler('"brief.json" review', ctx);
+  assert.equal(messages.at(-1).options.triggerTurn, false);
+  assert.deepEqual(f.records, history);
   const checked = await tools.get('forgeflow_check_readiness').execute('check', { filename: 'brief.json' }, undefined, undefined, ctx);
   assert.equal(checked.details.mode, 'continuation-readiness');
   assert.equal(checked.details.readiness.state, 'not-checked');
