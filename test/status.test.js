@@ -141,6 +141,13 @@ test('native status and slash command save no adapter records or model turns', a
   await assert.rejects(continuation.execute('execute', { filename: 'brief.json', execute: true }, undefined, undefined, ctx), /preview only/);
   assert.deepEqual(await readFile(f.manifest), before);
   assert.deepEqual(f.records, history);
+  const checked = await tools.get('forgeflow_check_readiness').execute('check', { filename: 'brief.json' }, undefined, undefined, ctx);
+  assert.equal(checked.details.mode, 'continuation-readiness');
+  assert.equal(checked.details.readiness.state, 'not-checked');
+  await commands.get('forgeflow-check-readiness').handler('"brief.json"', ctx);
+  assert.equal(messages.at(-1).options.triggerTurn, false);
+  assert.deepEqual(messages.at(-1).message.details, checked.details);
+  await assert.rejects(tools.get('forgeflow_check_readiness').execute('check', { filename: 'brief.json', execute: true }, undefined, undefined, ctx), /read-only/);
 });
 
 test('all durable receipts lead to verification even with pending notifications or stale blocked telemetry', async t => {

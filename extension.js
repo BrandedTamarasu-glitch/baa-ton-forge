@@ -4,6 +4,7 @@ import { loadPreview, renderPreview } from './planner.js';
 import { prepareLane, revalidate, matchPlan, verifyLane, reconcileLane } from './prepare.js';
 import { laneStatus, renderStatus } from './status.js';
 import { continuationPreview, renderContinuation } from './continuation.js';
+import { checkContinuation } from './continuation-readiness.js';
 import { recoverSubmission } from './recovery.js';
 import { nativePreflight } from './preflight.js';
 import { readManifestSnapshot } from './manifest-snapshot.js';
@@ -55,6 +56,10 @@ export default function adapter(pi) {
     if (Object.keys(params).some(key => key !== 'filename')) throw new Error('Continuation supports preview only; only filename is accepted');
     return continuationPreview(await status(params, ctx));
   }
+  async function readiness(params, ctx, signal) {
+    if (Object.keys(params).some(key => key !== 'filename')) throw new Error('Readiness is read-only; only filename is accepted');
+    return checkContinuation({ filename: path.resolve(ctx.cwd, params.filename), cwd: ctx.cwd, records: records(ctx), sessionFile: ctx.sessionManager.getSessionFile(), exec: pi.exec?.bind(pi), signal });
+  }
   async function reconcile(params, ctx) {
     const mapped = await reconcileLane({ filename: path.resolve(ctx.cwd, params.filename), taskId: params.taskId, workflowId: params.workflowId, cwd: ctx.cwd, sessionFile: ctx.sessionManager.getSessionFile() });
     const previous = records(ctx).filter(item => item.kind === 'planned' && (item.workflowId === mapped.workflowId || (item.root === mapped.root && item.sourcePath === mapped.sourcePath && item.taskId === mapped.taskId)));
@@ -70,6 +75,7 @@ export default function adapter(pi) {
     return verified;
   }
   for (const definition of [
+    { name: 'forgeflow_check_readiness', label: 'Check continuation prerequisites', fields: ['filename'], run: readiness, render: renderContinuation, description: 'Read-only native continuation prerequisite inspection. Checks clean checkout, dependency integration, exact saved profile and registered root/session/source binding for the selected prepare/plan/dispatch-review step. Never creates a workspace or invokes planning/dispatch. Does not establish authorization, model entitlement or runtime qualification; Baa-ton remains authoritative for dispatch.' },
     { name: 'forgeflow_continue', label: 'Preview root continuation', fields: ['filename'], run: continuePreview, render: renderContinuation, description: 'Preview only: explain one immediate next root step from local status evidence, required checks and stop reasons. Execution is not supported. Does not invoke suggested tools, save records, prepare, plan, dispatch, approve, verify or create resources. Authorization and native readiness are not assessed. Baa-ton owns future planning and dispatch; root verification remains independent.' },
     { name: 'forgeflow_recover_submission', label: 'Reconcile rejected submission', fields: ['filename', 'taskId'], run: recover, render: record => `Saved no-durable-effect evidence for ${record.taskId}, attempt ${record.toolCallId}. History retained. Run preview and prepare again after the reported planning prerequisite is repaired.`, description: 'Recover only an exact saved pre-persistence herdr_plan root-authorization or missing-source-workspace rejection in this native Pi session. Requires the matching call/result and an unchanged saved pre-submission manifest fingerprint; legacy attempts require an older manifest or exact earlier native workflow observations; fails closed for ambiguous effects. Appends evidence without deleting history, changing the brief, registering roots, planning or dispatching. Run before root migration or other operations change the manifest.' },
     { name: 'forgeflow_status', label: 'Show workflow status', fields: ['filename'], run: status, render: renderStatus, description: 'Read-only status and next-action advice for a brief: current root/session, owning pane/workspace, workflow IDs, durable receipts and delivery, saved verification, parent requests and preparation blockers. Reads this checkout manifest, local Git evidence and current session branch. Does not establish authorization or live native readiness, scan other projects, save records, run tests, prepare or dispatch. Completed receipts should be independently verified even if notification delivery is pending.' },
@@ -106,6 +112,17 @@ export default function adapter(pi) {
         if (!filename) throw new Error('Usage: /forgeflow-continue "path/to/brief.md" (preview only)');
         const result = await continuePreview({ filename }, ctx);
         pi.sendMessage({ customType: 'forgeflow-continuation-preview', content: renderContinuation(result), display: true, details: result }, { triggerTurn: false });
+      } catch (error) { ctx.ui.notify(message(error), 'error'); }
+    },
+  });
+  pi.registerCommand('forgeflow-check-readiness', {
+    description: 'Inspect continuation prerequisites with read-only native probes',
+    handler: async (args, ctx) => {
+      try {
+        const filename = args.trim().replace(/^"(.*)"$/, '$1');
+        if (!filename) throw new Error('Usage: /forgeflow-check-readiness "path/to/brief.md"');
+        const result = await readiness({ filename }, ctx, ctx.signal);
+        pi.sendMessage({ customType: 'forgeflow-continuation-readiness', content: renderContinuation(result), display: true, details: result }, { triggerTurn: false });
       } catch (error) { ctx.ui.notify(message(error), 'error'); }
     },
   });

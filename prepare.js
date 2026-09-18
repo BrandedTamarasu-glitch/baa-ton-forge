@@ -31,7 +31,8 @@ async function ancestor(cwd, commit) {
   catch { throw new Error(`Verified commit ${commit} is not integrated in ${cwd}`); }
 }
 
-export async function prepareLane({ filename, taskId, preview, cwd, records = [], env = process.env }) {
+// Shared read-only checks. This does not authorize a new planning submission.
+export async function inspectLanePrerequisites({ filename, taskId, preview, cwd, records = [], env = process.env }) {
   const pane = identity(env);
   const current = await loadPreview(filename, { cwd });
   if (!preview || preview.sourcePath !== current.sourcePath || preview.sourceSha256 !== current.sourceSha256) throw new Error('Brief or task profile configuration is new or changed; run /forgeflow-plan-lanes again before preparing');
@@ -60,9 +61,15 @@ export async function prepareLane({ filename, taskId, preview, cwd, records = []
       await ancestor(target.root, record.commit);
     }
   }
-  const previous = records.findLast(item => ['planned', 'planning'].includes(item.kind) && !submissionRecovered(item, records) && item.taskId === taskId && item.sourcePath === current.sourcePath && item.sourceSha256 === current.sourceSha256 && item.root === root.root);
-  if (previous) throw new Error(`Task already mapped or submitted (${previous.workflowId ?? previous.toolCallId}); inspect the Baa-ton ledger instead of replanning`);
   return { kind: 'prepared', taskId, sourcePath: current.sourcePath, sourceSha256: current.sourceSha256, root: root.root, rootHead: root.head, target: target.root, targetHead: target.head, ...(workflow.repoCwd ? { repository, targetBranch: target.branch } : {}), ...pane, planArguments: workflow.planArguments };
+}
+
+export async function prepareLane(options) {
+  const prepared = await inspectLanePrerequisites(options);
+  const records = options.records ?? [];
+  const previous = records.findLast(item => ['planned', 'planning'].includes(item.kind) && !submissionRecovered(item, records) && item.taskId === prepared.taskId && item.sourcePath === prepared.sourcePath && item.sourceSha256 === prepared.sourceSha256 && item.root === prepared.root);
+  if (previous) throw new Error(`Task already mapped or submitted (${previous.workflowId ?? previous.toolCallId}); inspect the Baa-ton ledger instead of replanning`);
+  return prepared;
 }
 
 export async function revalidate(prepared, records, env = process.env) {

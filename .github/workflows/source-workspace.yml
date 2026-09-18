@@ -18,4 +18,4 @@ jobs:
         with:
           node-version: '22'
       - name: Test nested Git setup, preparation-to-planning and next-action status
-        run: node --test test/source-workspace.test.js test/status.test.js test/continuation.test.js
+        run: node --test test/source-workspace.test.js test/status.test.js test/continuation.test.js test/continuation-readiness.test.js
