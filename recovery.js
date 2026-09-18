@@ -103,7 +103,7 @@ export async function recoverSubmission({ filename, taskId, cwd, entries, sessio
   if (!Number.isFinite(started) || !(Date.parse(result.timestamp) >= started)) throw new Error('Saved submission timestamps are invalid');
   if (record.manifestSnapshot) {
     const owner = { paneId: record.paneId, workspaceId: record.workspaceId, sessionFile };
-    const { snapshot, manifest } = await readManifestSnapshot(root, owner);
+    const { snapshot, manifest } = await readManifestSnapshot(root, owner, env);
     assertSnapshotUnchanged(record.manifestSnapshot, snapshot, started, owner);
     if (manifest?.workflows.some(workflow => workflow.objective === record.planArguments.objective))
       throw new Error('A matching durable workflow exists; reconcile it instead');
@@ -112,7 +112,7 @@ export async function recoverSubmission({ filename, taskId, cwd, entries, sessio
         resultSha256: digest(JSON.stringify(result)), manifestPath: snapshot.path,
         manifestProof: 'saved-pre-submission-snapshot', before: record.manifestSnapshot, after: snapshot } };
   }
-  const manifestPath = await resolveManifestPath(root);
+  const manifestPath = await resolveManifestPath(root, { env });
   const before = await lstat(manifestPath);
   if (!before.isFile() || before.isSymbolicLink()) throw new Error('Manifest must be a regular non-symlink file');
   const bytes = await readFile(manifestPath, 'utf8');

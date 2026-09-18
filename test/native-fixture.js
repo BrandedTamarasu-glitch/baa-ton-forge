@@ -5,6 +5,7 @@ export async function nativeFixture(f, env) {
   const configDir = path.join(path.dirname(f.root), 'native-controller');
   await mkdir(configDir, { recursive: true });
   const sessionFile = path.join(path.dirname(f.root), 'session.jsonl');
+  await writeFile(sessionFile, '');
   const config = { version: 2, owner: 'herdr-orchestrator', orchestrators: [{
     id: 'registered-root', root: { pane_id: env.HERDR_PANE_ID, workspace_id: env.HERDR_WORKSPACE_ID,
       target: env.HERDR_PANE_ID, target_kind: 'pane_id', agent_kind: 'pi' },

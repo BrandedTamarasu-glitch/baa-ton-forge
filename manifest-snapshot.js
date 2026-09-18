@@ -21,8 +21,8 @@ function stateHash(manifest, owner) {
   }
   return hash(JSON.stringify(canonical(state)));
 }
-export async function readManifestSnapshot(root, owner) {
-  const filename = await resolveManifestPath(root);
+export async function readManifestSnapshot(root, owner, env = process.env) {
+  const filename = await resolveManifestPath(root, { env });
   let before;
   try { before = await lstat(filename); }
   catch (error) {
@@ -34,7 +34,7 @@ export async function readManifestSnapshot(root, owner) {
   const manifest = JSON.parse(bytes);
   if (![1, 2].includes(manifest.version) || !Array.isArray(manifest.workflows)) throw new Error('Cannot snapshot an invalid Baa-ton manifest');
   const after = await lstat(filename);
-  if (['ino', 'dev', 'mtimeMs', 'ctimeMs', 'size'].some(key => before[key] !== after[key]) || await resolveManifestPath(root) !== filename)
+  if (['ino', 'dev', 'mtimeMs', 'ctimeMs', 'size'].some(key => before[key] !== after[key]) || await resolveManifestPath(root, { env }) !== filename)
     throw new Error('Manifest changed during snapshot; retry preparation');
   return { snapshot: { version: 1, path: filename, exists: true, capturedAt: new Date().toISOString(), owner,
     rawSha256: hash(bytes), stateSha256: stateHash(manifest, owner) }, manifest };

@@ -77,3 +77,53 @@ absence after an unresolved request requires investigation.
 
 Record a qualified result only after the owning root has independently checked
 these facts. This document does not claim the trial has run.
+
+## Manifest and session ownership regression
+
+This covers the two Windows follow-ups after PR #19: historical ledgers for
+different roots, and the live-agent session path versus the native Pi session.
+Linux/Windows fixture tests are not live Windows qualification.
+
+Fully restart Pi in the same owning pane and resume the same session after
+updating Forge. Before any new preparation:
+
+1. Read the unique current pane/workspace registration and its
+   `program.parent_manifest_path`. Record the canonical checkout and selected
+   path. If both supported manifests already exist, record their hashes and root
+   ownership. Preserve both; do not restore a previously deleted ledger just to
+   run this test. Fixture CI covers that dual-layout case without altering live
+   history.
+2. Capture the actual parsed `herdr agent get` response's `agent_session.kind`
+   and `.value`, the session path from Pi's native session manager, and
+   `PI_SESSION_FILE` if present. Render each through `JSON.stringify`, not a
+   terminal interpretation of backslashes or control characters. Do not paste
+   credentials or unrelated environment variables.
+3. If the strings differ, check filesystem canonical paths. Only equivalent
+   existing session files qualify as aliases. Confirm pane, workspace and Pi
+   harness identity independently; a matching UUID does not replace these checks.
+4. Continue the authorized preparation/planning steps above. When two layouts
+   exist, expect `nativeReadiness.root.manifestPath`, the planning snapshot, and
+   status to select the registered ledger. Confirm the alternate historical file
+   is byte-for-byte unchanged. No replacement workflow or ledger migration is
+   authorized by this procedure.
+
+If session ownership is blocked:
+
+- Different real session files: stop and resume the actual owning Pi transcript
+  in its owning Herdr pane. Do not adopt another session's workflow records.
+- Invalid/control-byte native path: stop and retain the escaped diagnostic.
+  `\u0007` or `\u0002` are data corruption, not separator aliases. Do not guess
+  the intended characters or strip them. The native Baa-ton/Herdr path producer
+  needs repair before Forge can accept that identity.
+- Once native agent metadata is correct, use the registered
+  `herdr_reconcile_root` in that affected live root (with authorization for its
+  identity refresh), then run `herdr_doctor`. Reconciliation reads the live agent
+  metadata; repeating it while that input is corrupt is not a repair.
+- If doctor still reports `root-identity=fail`, retain its complete per-root
+  diagnostic. It may name a different root or a separate native identity problem.
+  Report that evidence to Baa-ton and stop; Forge path equivalence does not make
+  a failed native identity check healthy.
+
+Do not manually edit registrations, delete ledgers, manufacture session paths,
+or dispatch to test a blocked identity. Existing submission snapshots and saved
+verification remain historical evidence and are not rewritten by these fixes.
