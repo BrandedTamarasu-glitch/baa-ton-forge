@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { realpathSync } from 'node:fs';
 import { registerVerificationHandoff } from '../verification-handoff.js';
+import { registerVerificationAudit, verificationAudit, renderVerificationAudit } from '../verification-audit.js';
 Object.assign(process.env, { HERDR_ENV: '1', HERDR_PANE_ID: 'p', HERDR_WORKSPACE_ID: 'w' });
 
 function fixture() {
@@ -174,4 +175,107 @@ test('the owning user can cancel after a broken brief without adopting foreign p
   } finally { process.env.HERDR_PANE_ID = 'p'; }
   await f.commands.get('forgeflow-cancel-verification').handler('', f.ctx);
   assert.equal(f.records().at(-1).kind, 'verification-cancelled');
+});
+
+test('verification audit exposes fresh evidence, declined and confirmed review, and saved provenance without mutation', async () => {
+  const f = fixture(); await f.start(); await f.call(); await f.draft();
+  registerVerificationAudit(f.pi);
+  assert.equal(await f.hooks.get('tool_call')({ toolName: 'forgeflow_verification_audit', input: {} }, f.ctx), undefined);
+  f.approve = false; await f.review();
+  let report = verificationAudit(f.entries, { current: f.report.current });
+  assert.equal(report.handoffs[0].state, 'draft-awaiting-save');
+  assert.equal(report.handoffs[0].decisions[0].decision, 'declined');
+  assert.equal(report.verifications.length, 0);
+  f.approve = true; await f.review();
+  const before = structuredClone(f.entries), saves = f.saves.length;
+  f.ctx.ui.confirm = () => { throw new Error('Audit must not ask for confirmation'); };
+  f.pi.appendEntry = () => { throw new Error('Audit must not append records'); };
+  f.pi.exec = () => { throw new Error('Audit must not execute a command'); };
+  report = (await f.invoke('forgeflow_verification_audit', { workflowId: 'herdr-one' })).details;
+  assert.equal(report.handoffs[0].state, 'saved');
+  assert.equal(report.handoffs[0].context, 'recorded-context-matches');
+  assert.equal(report.handoffs[0].saves[0].confirmation, 'recorded-confirmation');
+  assert.deepEqual(report.handoffs[0].gaps, []);
+  assert.equal(report.handoffs[0].toolEvidence[0].resultEntryId, 'result-check');
+  assert.match(report.handoffs[0].toolEvidence[0].resultSha256, /^[a-f0-9]{64}$/);
+  assert.equal(report.verifications[0].method, 'handoff');
+  await f.commands.get('forgeflow-verification-audit').handler('herdr-one', f.ctx);
+  assert.equal(f.messages.at(-1)[1].triggerTurn, false);
+  assert.deepEqual(f.messages.at(-1)[0].details, report);
+  assert.deepEqual(f.entries, before); assert.equal(f.saves.length, saves);
+});
+
+test('audit distinguishes legacy inferred confirmation, direct saves and unknown older provenance', async () => {
+  const f = fixture(); await f.start(); await f.call(); await f.draft(); await f.review();
+  const entries = f.entries.filter(entry => entry.data?.kind !== 'verification-review-decision');
+  entries.push({ id: 'direct', type: 'custom', customType: 'forgeflow-adapter', data: {
+    kind: 'verified', workflowId: 'herdr-one', commit: 'b'.repeat(40), verificationMethod: 'direct', verifiedAt: 'later' } });
+  entries.push({ id: 'old', type: 'custom', customType: 'forgeflow-adapter', data: {
+    kind: 'verified', workflowId: 'herdr-one', commit: 'c'.repeat(40) } });
+  const report = verificationAudit(entries);
+  assert.equal(report.handoffs[0].saves[0].confirmation, 'inferred-from-legacy-save-attempt');
+  assert.deepEqual(report.verifications.map(item => item.method), ['handoff', 'direct', 'legacy-unattributed']);
+  assert.match(renderVerificationAudit(report), /legacy-unattributed/);
+});
+
+test('audit preserves unresolved saves, cancellation and multiple workflow history', async () => {
+  const f = fixture(); await f.start(); await f.call(); await f.draft();
+  f.install(async () => { throw new Error('disk full'); }); await f.review();
+  let report = verificationAudit(f.entries);
+  assert.equal(report.handoffs[0].state, 'save-unresolved');
+  assert.match(renderVerificationAudit(report), /no retry authorized/);
+  const g = fixture(); await g.start(); await g.commands.get('forgeflow-cancel-verification').handler('', g.ctx);
+  assert.equal(verificationAudit(g.entries).handoffs[0].state, 'cancelled');
+  f.pi.appendEntry('forgeflow-adapter', { kind: 'verified', workflowId: 'herdr-other', verificationMethod: 'direct', commit: 'd'.repeat(40) });
+  assert.equal(verificationAudit(f.entries).workflowId, 'herdr-other');
+  report = verificationAudit(f.entries, { workflowId: 'herdr-one' });
+  assert.equal(report.handoffs.length, 1); assert.equal(report.verifications.length, 0);
+  const missing = verificationAudit(f.entries, { workflowId: 'herdr-missing' });
+  assert.equal(missing.handoffs.length, 0); assert.match(missing.warnings.join(' '), /does not prove/);
+});
+
+test('audit reports gaps for missing, changed, ambiguous or contradictory evidence instead of claiming a chain', async () => {
+  for (const change of [
+    entries => entries.filter(e => e.data?.kind !== 'verification-handoff'),
+    entries => entries.filter(e => e.data?.kind !== 'verification-draft'),
+    entries => entries.filter(e => e.data?.kind !== 'verification-save-attempt'),
+    entries => entries.filter(e => e.id !== 'result-check'),
+    entries => { entries.find(e => e.id === 'result-check').message.content[0].text = 'Changed'; return entries; },
+    entries => { entries.push(structuredClone(entries.find(e => e.data?.kind === 'verification-handoff'))); return entries; },
+    entries => { entries.find(e => e.data?.kind === 'verified').data.commit = 'f'.repeat(40); return entries; },
+    entries => { entries.find(e => e.data?.kind === 'verified').data.root = '/foreign'; return entries; },
+    entries => { entries.find(e => e.data?.kind === 'verified').data.evidence = 'Different claims'; return entries; },
+    entries => { entries.find(e => e.data?.kind === 'verification-review-decision').data.decision = 'declined'; return entries; },
+    entries => { entries.find(e => e.data?.kind === 'verification-draft').data.assessments[0].toolCallIds = ['invented']; return entries; },
+  ]) {
+    const f = fixture(); await f.start(); await f.call(); await f.draft(); await f.review();
+    const report = verificationAudit(change(structuredClone(f.entries)), { workflowId: 'herdr-one' });
+    assert.equal(report.handoffs[0].state, 'evidence-gaps', JSON.stringify(report));
+    assert.ok(report.handoffs[0].gaps.length);
+    assert.match(renderVerificationAudit(report), /Gap:/);
+  }
+});
+
+test('audit renders malformed draft assessments and incomplete saved provenance as gaps', async () => {
+  const f = fixture(); await f.start(); await f.call(); await f.draft(); await f.review();
+  f.records().find(item => item.kind === 'verification-draft').assessments = [{ id: 'scope', toolCallIds: 7 }, null];
+  const report = verificationAudit(f.entries);
+  assert.equal(report.handoffs[0].state, 'evidence-gaps');
+  assert.doesNotThrow(() => renderVerificationAudit(report));
+  const entries = [{ type: 'custom', customType: 'forgeflow-adapter', data: { kind: 'verified', workflowId: 'herdr-orphan', verificationDraftId: 'draft' } }];
+  assert.deepEqual(verificationAudit(entries).verifications[0].gaps, ['Incomplete handoff/draft provenance.']);
+});
+
+test('audit does not adopt a different context or treat a new branch as proof of no verification', async () => {
+  const f = fixture(); await f.start(); await f.call(); await f.draft();
+  const report = verificationAudit(f.entries, { current: { ...f.report.current, sessionFile: '/different' } });
+  assert.equal(report.handoffs[0].context, 'different-or-unestablished-context');
+  assert.equal(report.handoffs[0].owner.sessionFile, f.report.current.sessionFile);
+  registerVerificationAudit(f.pi);
+  f.ctx.sessionManager.getBranch = () => [];
+  assert.match((await f.invoke('forgeflow_verification_audit', {})).details.warnings.join(' '), /does not prove/);
+  await assert.rejects(f.invoke('forgeflow_verification_audit', { workflowId: 'herdr-one', execute: true }), /only an optional/);
+  const count = f.entries.length;
+  await f.commands.get('forgeflow-verification-audit').handler('herdr-one extra', f.ctx);
+  assert.equal(f.entries.length, count); assert.match(f.notices.at(-1)[0], /only an optional/);
 });

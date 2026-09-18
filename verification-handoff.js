@@ -182,7 +182,9 @@ export function registerVerificationHandoff(pi, records, saveVerification, inspe
         const rendered = renderVerificationDraft(draft);
         pi.sendMessage({ customType: 'forgeflow-verification-review', display: true, content: rendered, details: draft }, { triggerTurn: false });
         if (!draft.eligible) throw new Error('Draft contains failed or blocked validation; inspect the evidence. No verification saved.');
-        if (!await ctx.ui.confirm('Save root verification?', `${rendered}\n\nConfirm the root assessments accurately reflect these outputs and the acceptance criteria. Save verification for this exact workflow/commit? This does not authorize any next lane or cleanup.`)) return;
+        const confirmed = await ctx.ui.confirm('Save root verification?', `${rendered}\n\nConfirm the root assessments accurately reflect these outputs and the acceptance criteria. Save verification for this exact workflow/commit? This does not authorize any next lane or cleanup.`);
+        append({ kind: 'verification-review-decision', handoffId: intent.handoffId, draftId: draft.draftId, decision: confirmed ? 'confirmed' : 'declined' });
+        if (!confirmed) return;
         await fresh(intent, ctx);
         if (hash(collect(intent, ctx)) !== hash(draft.evidence)) throw new Error('Native validation evidence changed during review');
         append({ kind: 'verification-save-attempt', handoffId: intent.handoffId, draftId: draft.draftId });
@@ -212,7 +214,7 @@ export function registerVerificationHandoff(pi, records, saveVerification, inspe
   });
   pi.on('tool_call', async (event, ctx) => {
     const intent = active(ctx); if (!intent) return;
-    if (['forgeflow_verification_evidence', 'forgeflow_verification_guidance'].includes(event.toolName)) return;
+    if (['forgeflow_verification_evidence', 'forgeflow_verification_guidance', 'forgeflow_verification_audit'].includes(event.toolName)) return;
     if (event.toolName === 'forgeflow_draft_verification') return;
     if (!READ_TOOLS.has(event.toolName) || armed !== intent.handoffId || busy || children(ctx, intent).some(item => item.kind === 'verification-draft'))
       return { block: true, reason: 'Verification handoff permits root validation only, then stops at its draft. Review/save or cancel explicitly; no direct verification, dispatch or edits.' };
