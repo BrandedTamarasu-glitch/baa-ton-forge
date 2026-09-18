@@ -9,6 +9,7 @@ import { prepareLane, revalidate, verifyLane, reconcileLane } from '../prepare.j
 import { laneStatus } from '../status.js';
 import { verificationGuidance } from '../verification-guidance.js';
 import adapter from '../extension.js';
+import { nativeFixture } from './native-fixture.js';
 const env = { HERDR_ENV: '1', HERDR_PANE_ID: 'controller:p1', HERDR_WORKSPACE_ID: 'controller' };
 const git = (cwd, ...args) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const profile = { provider: 'openai-codex', model: 'test-model', thinking: 'medium', auth: 'subscription' };
@@ -171,10 +172,18 @@ test('dirty integration checkouts and branch changes cannot pass verification', 
   await assert.rejects(verifyLane(options), /branch changed/);
 });
 
-for (const directory of ['.pi/herdr-orchestrator', '.baa-ton/herdr-orchestrator'])
-test(`verification guidance uses ${directory} for dirty work, integration and independent validation`, async t => {
+for (const [directory, dual] of [['.pi/herdr-orchestrator', false], ['.baa-ton/herdr-orchestrator', false], ['.baa-ton/herdr-orchestrator', true]])
+test(`verification guidance uses ${directory}${dual ? ' with historical alternate' : ''} for dirty work, integration and independent validation`, async t => {
   const f = await fixture(t, directory), prepared = await prepareLane({ ...f, taskId: 'a' });
   const done = await complete(f, prepared);
+  let alternate, alternateBefore;
+  if (dual) {
+    const native = await nativeFixture({ root: f.cwd, target: f.wa, manifestDirectory: directory }, env);
+    f.env = native.env;
+    alternate = path.join(f.cwd, '.pi/herdr-orchestrator/manifest.json');
+    alternateBefore = JSON.stringify({ version: 2, workflows: [], sessionLog: { kind: 'root', paneId: 'old:p1', workspaceId: 'old' } });
+    await mkdir(path.dirname(alternate), { recursive: true }); await writeFile(alternate, alternateBefore);
+  }
   const options = { ...f, taskId: 'a', records: [done.mapped], sessionFile: '/session' };
   const reconciled = await reconcileLane({ ...options, workflowId: done.mapped.workflowId });
   assert.equal(reconciled.workflowId, done.mapped.workflowId);
@@ -194,7 +203,7 @@ test(`verification guidance uses ${directory} for dirty work, integration and in
   assert.equal(report.evidence.integrated, true);
   assert.equal(await readFile(path.join(f.cwd, 'journal.txt'), 'utf8'), 'controller state');
   assert.equal(options.records.length, 1);
-  const verified = await verifyLane({ mapped: done.mapped, cwd: f.cwd, commit: done.commit, evidence: 'Reviewed independently' });
+  const verified = await verifyLane({ mapped: done.mapped, cwd: f.cwd, commit: done.commit, evidence: 'Reviewed independently', env: f.env });
   options.records.push(verified);
   const savedRecords = structuredClone(options.records);
   const manifestPath = path.join(f.cwd, directory, 'manifest.json');
@@ -205,6 +214,7 @@ test(`verification guidance uses ${directory} for dirty work, integration and in
   assert.equal(report.verified, false);
   assert.deepEqual(options.records, savedRecords);
   assert.deepEqual(await readFile(manifestPath), manifestBefore);
+  if (dual) assert.equal(await readFile(alternate, 'utf8'), alternateBefore);
   await writeFile(path.join(f.a, 'unrelated.txt'), 'dirty integration');
   assert.match((await verificationGuidance(options)).blockers.join(' '), /integration checkout is dirty/);
 });

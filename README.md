@@ -379,11 +379,27 @@ Status reads this checkout's Baa-ton manifest and the current Pi session branch.
 Current Baa-ton stores the manifest at `.baa-ton/herdr-orchestrator/manifest.json`;
 Forge also supports existing roots using `.pi/herdr-orchestrator/manifest.json`.
 All manifest readers share this resolution, and native preparation validates the
-controller's registered manifest against these checkout-local locations. Two
-separate manifests are ambiguous: Forge stops for inspection without selecting,
-merging, moving, or deleting either ledger. An invalid current manifest does not
-cause fallback to legacy state. Saved recovery snapshots remain bound to their
-original manifest path.
+controller's registered manifest against these checkout-local locations. When
+both layouts exist, Forge reads the current pane/workspace's unique controller
+registration and uses its validated `program.parent_manifest_path`. Historical
+state belonging to other roots may remain in the alternate ledger. Missing or
+invalid registration, an escaped/unsupported path, same-root state in both
+ledgers, or alternate state with unproven ownership stops the operation. Forge
+never merges, moves, deletes, or repairs either ledger, and never falls back
+from an invalid registered ledger. Saved recovery snapshots remain bound to their
+original manifest path. A single layout remains readable for offline inspection;
+that does not establish native root readiness.
+
+Native Pi session ownership accepts different path spellings only when the
+filesystem resolves them to the same existing session file. This covers Windows
+directory junctions, case and separator aliases; matching only a filename or
+session UUID is insufficient. Forge also checks `PI_SESSION_FILE` when present.
+Control characters and unresolvable/different paths remain blocked with
+JSON-escaped live-agent, native-Pi and environment path evidence. Do not remove
+escape characters or reset a root to make the comparison pass. A failed Baa-ton
+`root-identity` doctor check is a separate native prerequisite; Forge does not
+override it. See the [Windows ownership regression](docs/windows-source-workspace-trial.md#manifest-and-session-ownership-regression)
+for evidence and repair guidance for the latest [issue #5](https://github.com/BrandedTamarasu-glitch/baa-ton-forge/issues/5) reports.
 It shows workflow IDs, owning sessions/panes/workspaces, completion receipts,
 saved verification, dependencies, and preparation blockers. A receipt is never
 reported as root verification. Changed brief hashes invalidate old records for

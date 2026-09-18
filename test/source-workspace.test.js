@@ -175,12 +175,22 @@ test('removed completed source may be replaced, but a still-live unbound source 
   assert.equal((await f.audit()).attempts.length, 2);
 });
 
-for (const directory of ['.pi/herdr-orchestrator', '.baa-ton/herdr-orchestrator'])
-test(`native preparation and guarded planning use ${directory}; submission never creates sources`, async t => {
+for (const [directory, dual] of [['.pi/herdr-orchestrator', false], ['.baa-ton/herdr-orchestrator', false], ['.baa-ton/herdr-orchestrator', true], ['.pi/herdr-orchestrator', true]])
+test(`native preparation and guarded planning use ${directory}${dual ? " with historical alternate" : ""}; submission never creates sources`, async t => {
   const f = await fixture(t, directory), entries = [], tools = new Map(), events = new Map();
   const manifestPath = path.join(f.prepared.root, directory, 'manifest.json');
   await mkdir(path.dirname(manifestPath), { recursive: true });
   await writeFile(manifestPath, JSON.stringify({ version: 2, workflows: [] }));
+  let alternate, historical;
+  if (dual) {
+    alternate = path.join(f.root, directory.startsWith('.baa-ton') ? '.pi/herdr-orchestrator/manifest.json' : '.baa-ton/herdr-orchestrator/manifest.json');
+    historical = JSON.stringify({ version: 2, workflows: [], sessionLog: { kind: 'root', paneId: 'old:p1', workspaceId: 'old' } });
+    await mkdir(path.dirname(alternate), { recursive: true }); await writeFile(alternate, historical);
+    const aliasDir = path.join(path.dirname(f.root), 'session alias');
+    await symlink(path.dirname(f.native.sessionFile), aliasDir, process.platform === 'win32' ? 'junction' : 'dir');
+    f.native.responses.agent.agent.agent_session.value = path.join(aliasDir, path.basename(f.native.sessionFile));
+    f.native.env.PI_SESSION_FILE = f.native.responses.agent.agent.agent_session.value;
+  }
   const saved = Object.fromEntries(Object.keys(f.native.env).map(key => [key, process.env[key]]));
   Object.assign(process.env, f.native.env);
   t.after(() => { for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
@@ -211,10 +221,11 @@ test(`native preparation and guarded planning use ${directory}; submission never
   // Fixture transport result, not a live Baa-ton qualification.
   events.get('tool_result')({ ...event, details: { workflow: { id: 'herdr-test', cwd: prepared.target } } }, ctx);
   assert.equal(entries.at(-1).data.kind, 'planned');
+  if (dual) assert.equal(await readFile(alternate, 'utf8'), historical);
   assert.equal(f.creations(), 1);
   await writeFile(manifestPath, JSON.stringify({ workflows: [{ id: 'herdr-test', status: 'planned', cwd: prepared.target,
     objective: prepared.planArguments.objective, lanes: prepared.planArguments.lanes,
-    taskBinding: { rootPaneId: env.HERDR_PANE_ID, workspaceId: env.HERDR_WORKSPACE_ID, rootSessionPath: f.native.sessionFile },
+    taskBinding: { rootPaneId: env.HERDR_PANE_ID, workspaceId: env.HERDR_WORKSPACE_ID, rootSessionPath: f.native.responses.agent.agent.agent_session.value },
     worktreeBinding: { repoParent: { checkoutPath: prepared.repository.root, workspaceId: 'native-source-1' } } }] }));
   const report = await checkContinuation({ filename: f.filename, cwd: f.root, records: entries.map(item => item.data),
     sessionFile: f.native.sessionFile, env: f.native.env, exec: async (...args) => {
@@ -225,4 +236,17 @@ test(`native preparation and guarded planning use ${directory}; submission never
   assert.match(report.readiness.checks[0], /unrelated controller edits allowed/);
   assert.equal(await readFile(path.join(f.root, 'README.md'), 'utf8'), 'Concurrent controller instruction edit\n');
   assert.notEqual(git(f.root, 'diff', '--cached'), '');
+});
+
+test('bad native or environment session identity blocks before automatic source creation', async t => {
+  const f = await fixture(t), original = f.native.sessionFile;
+  for (const value of [path.join(path.dirname(original), 'other.jsonl'), `${original}\u0007`]) {
+    f.native.responses.agent.agent.agent_session.value = value;
+    await assert.rejects(nativePreflight(f.options), /Live root session differs/);
+    assert.equal(f.creations(), 0);
+  }
+  f.native.responses.agent.agent.agent_session.value = original;
+  f.native.env.PI_SESSION_FILE = `${original}\u0002`;
+  await assert.rejects(nativePreflight(f.options), /Control characters detected/);
+  assert.equal(f.creations(), 0);
 });

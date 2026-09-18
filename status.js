@@ -6,6 +6,7 @@ import { prepareLane } from './prepare.js';
 import { submissionRecovered } from './recovery.js';
 import { nextAction, recommendedAction } from './next-action.js';
 import { resolveManifestPath } from './manifest-path.js';
+import { sameSessionPath } from './session-path.js';
 
 const receiptPresent = lane => typeof lane.completionReceipt?.id === 'string' && lane.completionReceipt.id.trim() &&
   typeof lane.completionReceipt?.summary === 'string' && lane.completionReceipt.summary.trim();
@@ -48,7 +49,7 @@ export async function laneStatus({ filename, cwd, records = [], sessionFile, env
   let manifestReadable = false;
   let manifestPath = null;
   try {
-    manifestPath = await resolveManifestPath(root);
+    manifestPath = await resolveManifestPath(root, { env });
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
     if (!Array.isArray(manifest?.workflows)) throw new Error('workflows must be an array');
     if (manifest.workflows.some(workflow => !workflow || typeof workflow.id !== 'string' || !Array.isArray(workflow.lanes) || workflow.lanes.some(lane => !lane || typeof lane !== 'object'))) throw new Error('invalid workflow or lane entry');
@@ -87,7 +88,7 @@ export async function laneStatus({ filename, cwd, records = [], sessionFile, env
     }
     const complete = Boolean(workflow?.lanes?.length && receipts === workflow.lanes.length);
     const blockers = [];
-    const ownerMismatch = Boolean(owner && (!current.inHerdr || owner.root !== root || owner.paneId !== current.paneId || owner.workspaceId !== current.workspaceId || (owner.sessionFile && owner.sessionFile !== current.sessionFile)));
+    const ownerMismatch = Boolean(owner && (!current.inHerdr || owner.root !== root || owner.paneId !== current.paneId || owner.workspaceId !== current.workspaceId || (owner.sessionFile && !await sameSessionPath(owner.sessionFile, current.sessionFile))));
     const ownerIncomplete = Boolean(workflow && (!binding?.rootSessionPath || !binding?.rootPaneId || !binding?.workspaceId));
     const mappingMismatch = Boolean(mapped && workflow && !await matchesTask(workflow, task, root));
     if (ownerMismatch) blockers.push('Current context does not match the owning Herdr root session, pane, or workspace. Switch to that root; do not reset its mapping.');

@@ -1,10 +1,11 @@
-import { lstat, readFile, realpath } from 'node:fs/promises';
-import { homedir } from 'node:os';
+import { realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { checkout, identity } from './prepare.js';
 import { isDeepStrictEqual } from 'node:util';
 import { ensureSourceWorkspace } from './source-workspace.js';
 import { canonicalPath, resolveManifestPath } from './manifest-path.js';
+import { controllerRegistration } from './controller-registration.js';
+import { assertLiveSession } from './session-path.js';
 
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 function required(value, key, context) {
@@ -38,29 +39,9 @@ async function probe({ prepared, sessionFile, exec, env = process.env, signal })
   const pane = identity(env);
   if (!sessionFile || !path.isAbsolute(sessionFile)) throw new Error('Native Pi session identity is unavailable; resume the owning session before preparing');
   if (typeof exec !== 'function') throw new Error('Native Herdr inspection is unavailable; load this adapter in Pi before preparing');
-  const configDir = env.HERDR_PLUGIN_CONFIG_DIR || (process.platform === 'win32'
-    ? path.join(env.APPDATA || path.join(homedir(), 'AppData/Roaming'), 'herdr/plugins/config/herdr-orchestrator-controller')
-    : path.join(homedir(), '.config/herdr/plugins/config/herdr-orchestrator-controller'));
-  if (!path.isAbsolute(configDir)) throw new Error('Controller config directory must be absolute; inspect the installed Baa-ton configuration');
-  const configPath = path.join(configDir, 'config.json');
-  let config;
-  try {
-    const info = await lstat(configPath);
-    if (!info.isFile() || info.isSymbolicLink() || (process.platform !== 'win32' && (info.mode & 0o022))) throw new Error('unsafe config file');
-    config = JSON.parse(await readFile(configPath, 'utf8'));
-  } catch { throw new Error('Controller registration is unavailable or invalid; inspect Baa-ton root registration before preparing (do not reset it)'); }
-  if (config.version !== 2 || config.owner !== 'herdr-orchestrator' || !Array.isArray(config.orchestrators))
-    throw new Error('Unsupported controller registration; inspect or update Baa-ton before preparing');
-  const matches = config.orchestrators.filter(item => item?.root?.pane_id === pane.paneId && item.root.workspace_id === pane.workspaceId);
-  if (matches.length !== 1) throw new Error('Current pane/workspace has no unique registered controller root; resume the owner or use audited Baa-ton root recovery');
-  const mapping = matches[0], root = mapping.root;
-  if (root.agent_kind !== 'pi' || !mapping.id || !['name', 'pane_id'].includes(root.target_kind) || !root.target ||
-      (root.target_kind === 'pane_id' && root.target !== pane.paneId)) throw new Error('Registered root identity is invalid or is not Pi; inspect Baa-ton registration');
-  if (mapping.program?.workspace_id !== pane.workspaceId ||
-      !path.isAbsolute(mapping.program?.id ?? '') || await realpath(mapping.program.id) !== prepared.root)
-    throw new Error('Registered root belongs to another checkout; use that root or audited recovery before preparing');
-  if (typeof mapping.program?.parent_manifest_path !== 'string') throw new Error('Registered root has no manifest path');
-  await resolveManifestPath(prepared.root, { registeredPath: mapping.program.parent_manifest_path });
+  const { mapping, configPath } = await controllerRegistration(prepared.root, env);
+  const root = mapping.root;
+  const manifestPath = await resolveManifestPath(prepared.root, { registeredPath: mapping.program.parent_manifest_path, env });
   async function inspect(args) {
     const result = await exec(env.HERDR_BIN_PATH || 'herdr', args, { cwd: prepared.root, timeout: 15000, signal });
     if (result.code !== 0) throw new Error(`Native Herdr ${args.slice(0, 2).join(' ')} failed; inspect connectivity and readiness before preparing`);
@@ -74,9 +55,8 @@ async function probe({ prepared, sessionFile, exec, env = process.env, signal })
   const agent = (await inspect(['agent', 'get', pane.paneId])).agent;
   if (!agent || agent.pane_id !== pane.paneId || agent.workspace_id !== pane.workspaceId || agent.agent !== 'pi' ||
       (root.target_kind === 'name' && agent.name !== root.target)) throw new Error('Live agent differs from the registered root; stop and inspect native ownership');
-  if (agent.agent_session?.kind !== 'path' || agent.agent_session.value !== sessionFile)
-    throw new Error('Live root session differs from this Pi session; resume the owning session before preparing');
-  const readiness = { version: 1, root: { registrationId: mapping.id, configPath, target: root.target, targetKind: root.target_kind,
+  await assertLiveSession(agent.agent_session, sessionFile, env);
+  const readiness = { version: 1, root: { registrationId: mapping.id, configPath, manifestPath, target: root.target, targetKind: root.target_kind,
     ...pane, sessionFile, checkout: prepared.root }, source: null };
   if (!prepared.planArguments.worktreeCwd) return { readiness };
   const inventory = await inspect(['worktree', 'list', '--cwd', prepared.target]);
