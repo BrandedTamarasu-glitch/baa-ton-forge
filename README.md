@@ -395,6 +395,25 @@ Native Pi session ownership accepts different path spellings only when the
 filesystem resolves them to the same existing session file. This covers Windows
 directory junctions, case and separator aliases; matching only a filename or
 session UUID is insufficient. Forge also checks `PI_SESSION_FILE` when present.
+When Herdr explicitly reports `agent_session.kind: "id"`, Forge requests fresh
+proof from Baa-ton's `baa-ton:pi-root-identity:v1` Pi extension bridge. Baa-ton
+checks its own native runtime session ID/path and JSONL header against the live
+pane/workspace/harness. Forge compares that result with its current runtime,
+registered root, checkout, and separate Herdr observation. No environment
+variable, filename inference, cached proof, shell substitute, or API fallback
+can supply this proof. Missing, duplicate, conflicting, or timed-out providers
+stop before source creation or planning.
+
+UUID support requires a Baa-ton build containing
+[Baa-ton PR #10](https://github.com/zachristmas/baa-ton/pull/10), which addresses
+[Baa-ton issue #9](https://github.com/zachristmas/baa-ton/issues/9).
+Updating Forge alone cannot supply the native bridge. The native read-only
+`herdr_root_identity` tool exposes the same proof for inspection. Existing path
+metadata remains supported without this bridge. New native Pi plans use the
+proven canonical path; Forge does not rewrite older UUID workflow bindings or
+adopt another session's records. The bridge is a trusted in-process extension
+interface, not a signed credential, dispatch authorization, or live model test.
+
 Control characters and unresolvable/different paths remain blocked with
 JSON-escaped live-agent, native-Pi and environment path evidence. Do not remove
 escape characters or reset a root to make the comparison pass. A failed Baa-ton

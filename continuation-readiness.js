@@ -31,7 +31,7 @@ export async function checkContinuation(options) {
     report.readiness.checks.push(prepared.repository
       ? 'Controller identity/HEAD, clean application/target, linked-worktree constraints, exact configured profile and dependency integration checked; unrelated controller edits allowed.'
       : 'Clean root/target, linked-worktree constraints, exact configured profile and dependency integration checked.');
-    const native = await nativePreflight({ prepared, sessionFile: options.sessionFile, exec: options.exec, env: options.env, signal: options.signal, ensureSource: false });
+    const native = await nativePreflight({ prepared, sessionFile: options.sessionFile, sessionId: options.sessionId, proveSession: options.proveSession, exec: options.exec, env: options.env, signal: options.signal, ensureSource: false });
     if (step.code !== 'prepare' && !isDeepStrictEqual(saved.nativeReadiness, native)) throw new Error('Native root or source binding changed since preparation; inspect the existing workflow');
     if (step.code === 'review-dispatch' && native.source) {
       const workflow = JSON.parse(before).workflows.find(item => item.id === step.workflowId);

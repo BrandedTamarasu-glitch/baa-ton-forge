@@ -2,6 +2,7 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { checkContinuation } from './continuation-readiness.js';
+import { nativeSessionOptions } from './native-pi-identity.js';
 
 const ENTRY = 'forgeflow-adapter';
 const message = error => error instanceof Error ? error.message : String(error);
@@ -24,7 +25,7 @@ export function registerDispatchOnce(pi, records, inspect = checkContinuation) {
   const latest = ctx => records(ctx).findLast(item => item.kind === 'dispatch-intent');
   const children = (ctx, intent) => records(ctx).filter(item => item.intentId === intent.intentId);
   const inspectHere = (filename, ctx) => inspect({ filename, cwd: ctx.cwd, records: records(ctx),
-    sessionFile: ctx.sessionManager.getSessionFile(), exec: pi.exec?.bind(pi), signal: ctx.signal });
+    sessionFile: ctx.sessionManager.getSessionFile(), ...nativeSessionOptions(pi, ctx), exec: pi.exec?.bind(pi), signal: ctx.signal });
 
   pi.registerCommand('forgeflow-dispatch-audit', {
     description: 'Show single-dispatch audit in this session; no execution or recovery',
