@@ -29,7 +29,9 @@ export async function checkContinuation(options) {
       const { nativeReadiness, sessionFile, ...local } = saved;
       if (sessionFile !== options.sessionFile || !isDeepStrictEqual(local, prepared)) throw new Error('Checkout, profile or session changed since preparation; inspect existing workflow before proceeding');
     }
-    report.readiness.checks.push('Clean root/repository/target, linked-worktree constraints, exact configured profile and dependency integration checked.');
+    report.readiness.checks.push(prepared.repository
+      ? 'Controller identity/HEAD, clean application/target, linked-worktree constraints, exact configured profile and dependency integration checked; unrelated controller edits allowed.'
+      : 'Clean root/target, linked-worktree constraints, exact configured profile and dependency integration checked.');
     const native = await nativePreflight({ prepared, sessionFile: options.sessionFile, exec: options.exec, env: options.env, signal: options.signal, ensureSource: false });
     if (step.code !== 'prepare' && !isDeepStrictEqual(saved.nativeReadiness, native)) throw new Error('Native root or source binding changed since preparation; inspect the existing workflow');
     if (step.code === 'review-dispatch' && native.source) {

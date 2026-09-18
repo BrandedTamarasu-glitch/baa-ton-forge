@@ -36,7 +36,7 @@ preparation and verification-record checks are not involved.
 
 - Previews task scopes, dependency stages, and exact proposed Baa-ton arguments.
 - Resolves named Baa-ton task profiles into exact launch settings.
-- Requires resolved launch profiles, clean checkouts, and appropriate writer
+- Requires resolved launch profiles, clean application/lane checkouts, and appropriate writer
   worktrees before preparing a lane.
 - Automatically creates or reuses a native application source workspace for
   explicit `repoCwd` tasks, with audited creation and duplicate prevention.
@@ -228,8 +228,18 @@ read-only reviewers need a distinct linked `worktreeCwd`**; preview withholds pl
 arguments until it is assigned. The integration checkout may itself be a linked
 worktree on the intended integration branch. Forge never creates worktrees or
 merges commits. Keep nested repositories and generated state intentionally
-excluded from the parent repository where appropriate; all relevant checkouts
-must remain clean.
+excluded from the parent repository where appropriate; the application integration
+checkout and lane worktree must remain clean.
+
+With explicit `repoCwd`, the controller may contain unrelated staged, unstaged
+or untracked edits. Preparation, planning revalidation, reconciliation, readiness
+and verification do not require that separate controller working tree to be clean
+and never stash, reset or commit its files. The application integration checkout
+and lane worktree must still be clean. If `repoCwd` resolves to the controller
+itself (including an alias), that checkout remains subject to application
+cleanliness requirements. Without `repoCwd`, the original clean-root rule applies.
+Saved controller HEAD, canonical checkout identity, brief/profile hashes and
+native ownership checks still apply; a HEAD change requires fresh preparation.
 
 Preparation validates the controller, integration checkout and worker, including
 canonical Git common-directory identity. Repository/worker branches and HEADs
@@ -420,7 +430,8 @@ After inspecting the preview, use native `forgeflow_check_readiness` with
 ```
 
 For a selected prepare, plan or dispatch-readiness step, this checks clean
-checkouts, dependency integration and the exact configured profile, then probes
+application/lane checkouts (and the controller when no separate `repoCwd` is
+declared), dependency integration and the exact configured profile, then probes
 Herdr root/session identity, source-workspace binding and target availability.
 It never creates a missing source workspace. Planned lanes must still match
 their original saved preparation and native binding; changed evidence blocks.

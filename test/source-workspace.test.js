@@ -9,6 +9,7 @@ import { nativePreflight } from '../preflight.js';
 import { loadPreview } from '../planner.js';
 import { prepareLane } from '../prepare.js';
 import adapter from '../extension.js';
+import { checkContinuation } from '../continuation-readiness.js';
 
 const env = { HERDR_ENV: '1', HERDR_PANE_ID: 'fixture:p1', HERDR_WORKSPACE_ID: 'fixture' };
 const git = (cwd, ...args) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -183,6 +184,9 @@ test('native tool preview to automatic prepare to guarded plan mapping; submissi
     appendEntry: (customType, data) => entries.push({ type: 'custom', customType, data }) });
   const ctx = { cwd: f.root, sessionManager: { getBranch: () => entries, getSessionFile: () => f.native.sessionFile }, ui: { notify() {} } };
   const call = (name, params) => tools.get(name).execute('call', params, undefined, undefined, ctx);
+  await writeFile(path.join(f.root, 'README.md'), 'Unrelated controller instructions\n');
+  git(f.root, 'add', 'README.md');
+  await writeFile(path.join(f.root, 'README.md'), 'Concurrent controller instruction edit\n');
   await call('forgeflow_plan_lanes', { filename: f.filename });
   await assert.rejects(call('forgeflow_prepare_lane', { filename: f.filename, taskId: 'writer', createSourceWorkspace: false }), /missing source_workspace_id/);
   assert.equal(entries.at(-1).data.kind, 'preview');
@@ -195,6 +199,7 @@ test('native tool preview to automatic prepare to guarded plan mapping; submissi
   assert.equal(entries.at(-1).data.kind, 'prepared');
   f.native.responses.worktree.source.source_workspace_id = 'native-source-1';
   f.native.responses.workspace.workspaces = [{ workspace_id: 'native-source-1' }];
+  await writeFile(path.join(f.root, 'journal.txt'), 'Concurrent untracked controller journal');
   assert.equal(await events.get('tool_call')(event, ctx), undefined);
   assert.equal(entries.at(-1).data.kind, 'planning');
   assert.equal(entries.at(-1).data.manifestSnapshot.exists, false);
@@ -202,4 +207,19 @@ test('native tool preview to automatic prepare to guarded plan mapping; submissi
   events.get('tool_result')({ ...event, details: { workflow: { id: 'herdr-test', cwd: prepared.target } } }, ctx);
   assert.equal(entries.at(-1).data.kind, 'planned');
   assert.equal(f.creations(), 1);
+  const manifestPath = path.join(f.root, '.pi/herdr-orchestrator/manifest.json');
+  await mkdir(path.dirname(manifestPath), { recursive: true });
+  await writeFile(manifestPath, JSON.stringify({ workflows: [{ id: 'herdr-test', status: 'planned', cwd: prepared.target,
+    objective: prepared.planArguments.objective, lanes: prepared.planArguments.lanes,
+    taskBinding: { rootPaneId: env.HERDR_PANE_ID, workspaceId: env.HERDR_WORKSPACE_ID, rootSessionPath: f.native.sessionFile },
+    worktreeBinding: { repoParent: { checkoutPath: prepared.repository.root, workspaceId: 'native-source-1' } } }] }));
+  const report = await checkContinuation({ filename: f.filename, cwd: f.root, records: entries.map(item => item.data),
+    sessionFile: f.native.sessionFile, env: f.native.env, exec: async (...args) => {
+      await writeFile(path.join(f.root, 'journal.txt'), 'Concurrent journal edit during native inspection');
+      return f.exec(...args);
+    } });
+  assert.equal(report.readiness.state, 'passed', JSON.stringify(report));
+  assert.match(report.readiness.checks[0], /unrelated controller edits allowed/);
+  assert.equal(await readFile(path.join(f.root, 'README.md'), 'utf8'), 'Concurrent controller instruction edit\n');
+  assert.notEqual(git(f.root, 'diff', '--cached'), '');
 });

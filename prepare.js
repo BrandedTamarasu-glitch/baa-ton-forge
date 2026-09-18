@@ -10,11 +10,11 @@ const exec = promisify(execFile);
 async function git(cwd, ...args) {
   return (await exec('git', ['-C', cwd, ...args], { maxBuffer: 1024 * 1024 })).stdout.trim();
 }
-export async function checkout(cwd) {
+export async function checkout(cwd, { requireClean = true } = {}) {
   const canonical = await realpath(cwd);
   const root = await realpath(await git(canonical, 'rev-parse', '--show-toplevel'));
   if (canonical !== root) throw new Error('Use the checkout root, not a subdirectory');
-  if (await git(root, 'status', '--porcelain', '--untracked-files=all')) throw new Error(`Checkout is dirty: ${root}`);
+  if (requireClean && await git(root, 'status', '--porcelain', '--untracked-files=all')) throw new Error(`Checkout is dirty: ${root}`);
   const head = await git(root, 'rev-parse', '--verify', 'HEAD');
   const commonDir = await realpath(await git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir'));
   const gitDir = await realpath(await git(root, 'rev-parse', '--absolute-git-dir'));
@@ -44,7 +44,9 @@ export async function inspectLanePrerequisites({ filename, taskId, preview, cwd,
   for (const lane of workflow.planArguments.lanes) {
     if (!lane.launchProfile) throw new Error(`Task ${taskId} has no launchProfile; add one to the brief task before preparing`);
   }
-  const root = await checkout(cwd);
+  // An explicit application has its own clean integration checkout. Unrelated
+  // controller edits are not application state; identity and HEAD still matter.
+  const root = await checkout(cwd, { requireClean: !workflow.repoCwd });
   const repository = workflow.repoCwd ? await checkout(workflow.repoCwd) : root;
   const target = await checkout(workflow.planArguments.worktreeCwd ?? cwd);
   if (target.commonDir !== repository.commonDir) throw new Error('Target belongs to a different repository than the declared repository or root');
@@ -83,11 +85,11 @@ export function matchPlan(prepared, event) {
 
 export async function reconcileLane({ filename, taskId, workflowId, cwd, sessionFile, env = process.env }) {
   const pane = identity(env);
-  const root = await checkout(cwd);
   const preview = await loadPreview(filename, { cwd });
   const task = preview.workflows.find(item => item.taskId === taskId);
   const proposed = task?.planArguments;
   if (!proposed) throw new Error('Brief has no plannable task with that ID');
+  const root = await checkout(cwd, { requireClean: !task.repoCwd });
   const target = await checkout(proposed.worktreeCwd ?? cwd);
   const repository = task.repoCwd ? await checkout(task.repoCwd) : root;
   if (target.commonDir !== repository.commonDir) throw new Error('Target belongs to a different repository');
@@ -115,7 +117,7 @@ export async function reconcileLane({ filename, taskId, workflowId, cwd, session
 
 export async function verifyLane({ mapped, commit, evidence, cwd }) {
   if (!evidence?.trim()) throw new Error('Supply the checks independently rerun and their results');
-  const root = await checkout(cwd);
+  const root = await checkout(cwd, { requireClean: !mapped.repository });
   if (root.root !== mapped.root) throw new Error('Verification must run in the mapped root checkout');
   const manifest = JSON.parse(await readFile(path.join(root.root, '.pi/herdr-orchestrator/manifest.json'), 'utf8'));
   const workflow = manifest.workflows?.find(item => item.id === mapped.workflowId);
