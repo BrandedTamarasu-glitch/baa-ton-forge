@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { realpath } from 'node:fs/promises';
 import { loadPreview, renderPreview } from './planner.js';
 import { prepareLane, revalidate, matchPlan, verifyLane, reconcileLane } from './prepare.js';
 import { laneStatus, renderStatus } from './status.js';
@@ -145,7 +146,7 @@ export default function adapter(pi) {
     try {
       if (history.slice(history.lastIndexOf(prepared) + 1).some(item => item.kind === 'submission-no-effect' && item.root === prepared.root && item.taskId === prepared.taskId && item.sourcePath === prepared.sourcePath && item.sourceSha256 === prepared.sourceSha256)) throw new Error('Submission was recovered; prepare the lane again before planning');
       if (!matchPlan(prepared, event)) throw new Error('Arguments differ from the prepared lane; prepare again');
-      if (path.resolve(ctx.cwd) !== prepared.root) throw new Error('Root directory changed since prepare');
+      if (await realpath(ctx.cwd) !== prepared.root) throw new Error('Root directory changed since prepare');
       if (pending.size) throw new Error('Another prepared plan is in flight; wait for its result');
       pending.set(event.toolCallId, prepared);
       const { nativeReadiness, sessionFile, ...localPrepared } = prepared;

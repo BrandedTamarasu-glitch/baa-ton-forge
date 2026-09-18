@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, readdir, rm, symlink } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
@@ -45,7 +45,7 @@ async function fixture(t) {
   const exec = async (binary, args) => {
     if (args[0] === 'workspace' && args[1] === 'create') {
       native.calls.push({ binary, args });
-      assert.equal(args[3], repository); assert.equal(args.at(-1), '--no-focus');
+      assert.equal(args[3], prepared.repository.root); assert.equal(args.at(-1), '--no-focus');
       assert.equal(args.includes('--trust-repository'), false);
       return create();
     }
@@ -88,6 +88,27 @@ test('root/session, target, read-only opt-out and inconsistent native inventory 
   f.native.responses.workspace.workspaces = [{ workspace_id: 'unbound-existing', worktree: { repo_key: path.join(f.repository, '.git'), checkout_path: f.repository } }];
   await assert.rejects(nativePreflight(f.options), /inventory disagrees/);
   assert.equal(f.creations(), 0);
+});
+
+test('canonical root manifest and worktree identity accept directory aliases without accepting foreign repositories', async t => {
+  const f = await fixture(t);
+  const alias = path.join(path.dirname(f.root), 'controller alias');
+  const targetAlias = path.join(path.dirname(f.root), 'writer alias');
+  await symlink(f.root, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  await symlink(f.target, targetAlias, process.platform === 'win32' ? 'junction' : 'dir');
+  f.native.config.orchestrators[0].program.id = alias;
+  f.native.config.orchestrators[0].program.parent_manifest_path = path.join(alias, '.pi/herdr-orchestrator/manifest.json');
+  await writeFile(f.native.configPath, JSON.stringify(f.native.config));
+  f.native.responses.worktree.worktrees[0].path = targetAlias;
+  f.native.responses.worktree.source.source_checkout_path = path.join(alias, 'apps/sample');
+  f.native.responses.worktree.source.repo_root = path.join(alias, 'apps/sample');
+  const result = await nativePreflight(f.options);
+  assert.equal(result.root.checkout, f.prepared.root);
+  assert.equal(result.source.target, f.prepared.target);
+  assert.equal(f.creations(), 1);
+  f.native.responses.worktree.source.source_checkout_path = f.root;
+  f.native.responses.worktree.source.repo_root = f.root;
+  await assert.rejects(nativePreflight(f.options), /does not match the declared repository/);
 });
 
 test('uncertain creation is retained and never retried blindly; native discovery can reuse its actual effect', async t => {
@@ -176,7 +197,7 @@ test('native tool preview to automatic prepare to guarded plan mapping; submissi
   assert.equal(entries.at(-1).data.kind, 'planning');
   assert.equal(entries.at(-1).data.manifestSnapshot.exists, false);
   // Fixture transport result, not a live Baa-ton qualification.
-  events.get('tool_result')({ ...event, details: { workflow: { id: 'herdr-test', cwd: f.target } } }, ctx);
+  events.get('tool_result')({ ...event, details: { workflow: { id: 'herdr-test', cwd: prepared.target } } }, ctx);
   assert.equal(entries.at(-1).data.kind, 'planned');
   assert.equal(f.creations(), 1);
 });
