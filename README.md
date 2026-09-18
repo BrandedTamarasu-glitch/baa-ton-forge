@@ -556,6 +556,12 @@ qualify the current manifest layout in native Windows Pi; that retest remains op
 
 ### Root verification handoff
 
+The [native Linux trial](docs/linux-nested-repository-trial.md#native-verification-handoff)
+reported fresh root checks, an evidence-linked draft, a separate review display,
+and a subsequent saved verification for the same commit. Its report distinguishes
+the observed path from unshown confirmation/provenance details and untested live
+failure paths. Windows issue #5 qualification remains outstanding.
+
 Once a completed lane is committed and integrated, the owning user can enter:
 
 ```text

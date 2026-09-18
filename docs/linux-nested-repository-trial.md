@@ -261,6 +261,58 @@ The controller journal and unrelated untracked `pnpm-lock.yaml` and
 reported. This qualifies the Linux guidance sequence, not automatic content
 review, included billing, or the new `.baa-ton` manifest layout on native Windows.
 
+## Native verification handoff
+
+Recorded from the owner's supplied Linux Pi transcript on 2026-09-18, following
+[PR #20](https://github.com/BrandedTamarasu-glitch/baa-ton-forge/pull/20).
+The documentation author did not rerun the live validation or inspect the final
+saved session entry. This rechecked the existing completed task; it did not
+dispatch another worker or change the implementation.
+
+| Evidence | Reported value |
+| --- | --- |
+| Root | `/home/corye/Baa-ton`, pane `w1E:p1`, workspace `w1E` |
+| Owning Pi session | `01a0b57f-5b75-7366-b4c1-18a3797d902d` |
+| Brief / task | `.forge-issue5-46c6a9b8e2/brief.json` / `status` |
+| Workflow | `herdr-58cc1e63` |
+| Reviewed commit | `e23d8ceb032af9bca91451824311136d7bf866a3` |
+| Preparation baseline | `9c66c72ed9996244b39b15da7ac536742460a309` |
+| Handoff | `19858d4f-9016-453e-b2e3-d22d45dcfadf` |
+| Draft | `ff7778a7-d6be-454e-a494-2bbdc7018e38` |
+| Native validation result entry | `172e15bc` |
+| Result SHA-256 | `e07897767db7917b3419edb10ab2e86afd4356e1036dbaf7b926718ef61ec217` |
+| Final status | `verified` at `2026-09-18T19:36:41.662Z`, same reviewed commit |
+
+The handoff started fresh root validation. The actual shell output showed both
+application and writer on their expected branches, clean at the reviewed commit.
+The baseline was an ancestor, the sole committed path was `status.txt`, and the
+scoped diff changed only `pending\n` to `ready\n`. Byte assertions checked both
+working files and the committed blob. The controller journal matched its original
+stage-3 contents and SHA-256
+`132541186ceb652493058fa3243c7935715a709c79a17c87d5f822c153689fb3`.
+
+`forgeflow_verification_evidence` exposed the actual root tool result, and
+`forgeflow_draft_verification` produced one passing assessment for scope, the
+byte-content check, and acceptance. All three cited the fresh validation call:
+`call_9oAD0frftY9Ta8v6xfsNiJZ1|fc_005b9b88675f4bdb016aad8f2aa70087d081a768aa4b369ae3`.
+The draft explicitly said verification was not saved. The separate review display
+included those assessments, the command, result entry/hash, and actual output.
+Subsequent native status showed the newer verification timestamp above, replacing
+the earlier `18:41:44.076Z` timestamp in the status view, with ownership unchanged.
+
+The final snapshot still showed one durable completion receipt with delivery
+pending. Notification delivery is separate from root verification and did not
+require redispatch. No repository mutation was reported during this handoff.
+
+This supplies native Linux evidence for fresh validation, evidence-linked drafting,
+separate review, and a subsequent saved verification. The supplied output does
+not show the confirmation interaction or the final entry's `handoffId` and
+`verificationDraftId`; their persistence is not independently confirmed by this
+report. Declining confirmation, cancellation, crash recovery, and failed-save
+paths were not demonstrated in this live transcript. Automated coverage remains
+separate, as does Zach's outstanding Windows qualification for issue #5. See the
+[full trial procedure](verification-handoff-trial.md) for those additional checks.
+
 ## Current issue coverage
 
 - [Issue #1](https://github.com/BrandedTamarasu-glitch/baa-ton-forge/issues/1):
