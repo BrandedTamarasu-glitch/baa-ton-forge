@@ -8,6 +8,7 @@ import { loadPreview, buildPreview } from '../planner.js';
 import { prepareLane, revalidate, verifyLane, reconcileLane } from '../prepare.js';
 import { laneStatus } from '../status.js';
 import { verificationGuidance } from '../verification-guidance.js';
+import adapter from '../extension.js';
 const env = { HERDR_ENV: '1', HERDR_PANE_ID: 'controller:p1', HERDR_WORKSPACE_ID: 'controller' };
 const git = (cwd, ...args) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const profile = { provider: 'openai-codex', model: 'test-model', thinking: 'medium', auth: 'subscription' };
@@ -231,4 +232,41 @@ test('verification guidance reports committed scope violations without treating 
   assert.match(report.blockers.join(' '), /outside declared scope: outside.txt/);
   assert.equal(report.evidence.scope, 'outside-declared-scope');
   assert.equal(report.verified, false);
+});
+
+test('native handoff uses real checkout evidence and the existing verification saver', async t => {
+  const f = await fixture(t, '.baa-ton/herdr-orchestrator'), prepared = await prepareLane({ ...f, taskId: 'a' });
+  const done = await complete(f, prepared);
+  git(f.a, 'merge', '--ff-only', done.commit);
+  const savedEnv = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]));
+  Object.assign(process.env, env);
+  t.after(() => { for (const [key, value] of Object.entries(savedEnv)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
+  const entries = [{ id: 'mapping', type: 'custom', customType: 'forgeflow-adapter', data: done.mapped }];
+  const tools = new Map(), commands = new Map(), hooks = [], resultHooks = [], notices = [];
+  adapter({ registerTool: tool => tools.set(tool.name, tool), registerCommand: (name, command) => commands.set(name, command),
+    getActiveTools: () => [...tools.keys()],
+    on: (name, handler) => { if (name === 'tool_call') hooks.push(handler); if (name === 'tool_result') resultHooks.push(handler); }, sendMessage() {},
+    appendEntry: (customType, data) => entries.push({ id: `entry-${entries.length}`, type: 'custom', customType, data }) });
+  const ctx = { cwd: f.cwd, hasUI: true, isIdle: () => true,
+    sessionManager: { getBranch: () => entries, getSessionFile: () => '/session' },
+    ui: { notify: (...args) => notices.push(args), confirm: async () => true } };
+  await commands.get('forgeflow-verification-handoff').handler(`"${f.filename}" a`, ctx);
+  const intent = entries.at(-1).data;
+  assert.equal(intent.kind, 'verification-handoff', JSON.stringify(notices));
+  await assert.rejects(tools.get('forgeflow_verify_lane').execute('early', { workflowId: done.mapped.workflowId, commit: done.commit, evidence: 'premature' }, undefined, undefined, ctx), /Review the active/);
+  const event = { toolName: 'read', toolCallId: 'root-read', input: { path: path.join(f.wa, 'source.txt') } };
+  entries.push({ id: 'call', type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', id: event.toolCallId, name: event.toolName, arguments: event.input }] } });
+  for (const hook of hooks) assert.equal(await hook(event, ctx), undefined);
+  for (const hook of resultHooks) hook({ ...event, isError: false }, ctx);
+  entries.push({ id: 'result', type: 'message', message: { role: 'toolResult', toolCallId: event.toolCallId, toolName: 'read', isError: false,
+    content: [{ type: 'text', text: await readFile(event.input.path, 'utf8') }] } });
+  const results = intent.requirements.map(item => ({ requirementId: item.id, outcome: 'pass', summary: 'Fixture root inspected the source', toolCallIds: [event.toolCallId] }));
+  await tools.get('forgeflow_draft_verification').execute('draft', { handoffId: intent.handoffId, results }, undefined, undefined, ctx);
+  assert.equal(entries.some(entry => entry.data?.kind === 'verified'), false);
+  await commands.get('forgeflow-review-verification').handler('', ctx);
+  const verified = entries.at(-1).data;
+  assert.equal(verified.kind, 'verified', JSON.stringify(notices));
+  assert.equal(verified.commit, done.commit); assert.equal(verified.handoffId, intent.handoffId);
+  assert.match(verified.evidence, /verified change/);
+  for (const cwd of [f.cwd, f.a, f.wa]) assert.equal(git(cwd, 'status', '--porcelain'), '');
 });
