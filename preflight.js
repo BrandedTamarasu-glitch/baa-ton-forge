@@ -4,18 +4,9 @@ import path from 'node:path';
 import { checkout, identity } from './prepare.js';
 import { isDeepStrictEqual } from 'node:util';
 import { ensureSourceWorkspace } from './source-workspace.js';
+import { canonicalPath, resolveManifestPath } from './manifest-path.js';
 
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
-// A new manifest may not exist yet. Resolve its nearest existing ancestor so
-// Windows short-path aliases and existing symlinks cannot split one identity.
-async function canonicalPath(value) {
-  if (typeof value !== 'string' || !path.isAbsolute(value)) throw new Error('Native path must be absolute');
-  try { return await realpath(value); }
-  catch (error) {
-    if (error.code !== 'ENOENT' || path.dirname(value) === value) throw error;
-    return path.join(await canonicalPath(path.dirname(value)), path.basename(value));
-  }
-}
 function required(value, key, context) {
   if (typeof value?.[key] !== 'string' || !value[key]) throw new Error(`${context}: missing ${key}; inspect native Herdr metadata before preparing`);
   return value[key];
@@ -65,11 +56,11 @@ async function probe({ prepared, sessionFile, exec, env = process.env, signal })
   const mapping = matches[0], root = mapping.root;
   if (root.agent_kind !== 'pi' || !mapping.id || !['name', 'pane_id'].includes(root.target_kind) || !root.target ||
       (root.target_kind === 'pane_id' && root.target !== pane.paneId)) throw new Error('Registered root identity is invalid or is not Pi; inspect Baa-ton registration');
-  const manifestPath = path.join(prepared.root, '.pi/herdr-orchestrator/manifest.json');
   if (mapping.program?.workspace_id !== pane.workspaceId ||
-      await canonicalPath(mapping.program?.parent_manifest_path) !== await canonicalPath(manifestPath) ||
       !path.isAbsolute(mapping.program?.id ?? '') || await realpath(mapping.program.id) !== prepared.root)
     throw new Error('Registered root belongs to another checkout; use that root or audited recovery before preparing');
+  if (typeof mapping.program?.parent_manifest_path !== 'string') throw new Error('Registered root has no manifest path');
+  await resolveManifestPath(prepared.root, { registeredPath: mapping.program.parent_manifest_path });
   async function inspect(args) {
     const result = await exec(env.HERDR_BIN_PATH || 'herdr', args, { cwd: prepared.root, timeout: 15000, signal });
     if (result.code !== 0) throw new Error(`Native Herdr ${args.slice(0, 2).join(' ')} failed; inspect connectivity and readiness before preparing`);

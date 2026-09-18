@@ -237,6 +237,30 @@ qualify the configured Haiku profile at runtime or establish included billing.
 Staged and unstaged controller-edit cases have automated coverage; the live
 trial deliberately left the controller index untouched.
 
+## Native verification guidance
+
+The owning root subsequently reported completing `herdr-58cc1e63`, task `status`,
+in the same disposable fixture. This records the supplied native Pi results;
+the documentation author did not rerun the workflow.
+
+- Before dispatch, the corrected guidance explicitly blocked on `0/1` durable
+  receipts and said not to begin completion verification.
+- After completion, the receipt was saved with delivery pending. Guidance read
+  the durable state and blocked on uncommitted `status.txt` changes; both HEADs
+  were unchanged. Notification delivery was not a prerequisite for inspection.
+- Under separate authorization, the root committed only `status.txt` using
+  normal hooks: `e23d8ceb032af9bca91451824311136d7bf866a3`.
+- Pre-integration guidance blocked on the missing integration. After a guarded
+  application fast-forward, it returned `awaiting-independent-validation`.
+- The root independently confirmed exact `ready\n`, scope and ancestry, and clean
+  application/writer checkouts, then saved native verification. Final status was
+  `verified`.
+
+The controller journal and unrelated untracked `pnpm-lock.yaml` and
+`pnpm-workspace.yaml` were preserved. No push, redispatch, closure or cleanup was
+reported. This qualifies the Linux guidance sequence, not automatic content
+review, included billing, or the new `.baa-ton` manifest layout on native Windows.
+
 ## Current issue coverage
 
 - [Issue #1](https://github.com/BrandedTamarasu-glitch/baa-ton-forge/issues/1):

@@ -374,6 +374,14 @@ Before acting in an unfamiliar session, use `forgeflow_status` or:
 ```
 
 Status reads this checkout's Baa-ton manifest and the current Pi session branch.
+Current Baa-ton stores the manifest at `.baa-ton/herdr-orchestrator/manifest.json`;
+Forge also supports existing roots using `.pi/herdr-orchestrator/manifest.json`.
+All manifest readers share this resolution, and native preparation validates the
+controller's registered manifest against these checkout-local locations. Two
+separate manifests are ambiguous: Forge stops for inspection without selecting,
+merging, moving, or deleting either ledger. An invalid current manifest does not
+cause fallback to legacy state. Saved recovery snapshots remain bound to their
+original manifest path.
 It shows workflow IDs, owning sessions/panes/workspaces, completion receipts,
 saved verification, dependencies, and preparation blockers. A receipt is never
 reported as root verification. Changed brief hashes invalidate old records for
@@ -522,8 +530,11 @@ commit, integrate, dispatch, or clean up resources. After independently resolvin
 the reported gaps under existing authorization and completing validation, use
 `forgeflow_verify_lane` to record the actual evidence. Reconciled mappings without
 a saved preparation baseline require separate provenance investigation; the tool
-does not invent one. Automated Linux/Windows coverage exercises this guidance;
-native Pi qualification remains outstanding.
+does not invent one. Automated Linux/Windows coverage exercises this guidance.
+The [native Linux guidance trial](docs/linux-nested-repository-trial.md#native-verification-guidance)
+confirmed missing-receipt, uncommitted-work, and missing-integration blockers,
+followed by independent root validation and saved verification. This does not
+qualify the current manifest layout in native Windows Pi; that retest remains open.
 
 ### Native preparation preflight
 
@@ -715,7 +726,9 @@ of an earlier lane HEAD. Prepare dependent worktrees after integrating changes.
 
 The adapter never creates worktrees, calls Baa-ton tools itself, changes Baa-ton
 ledgers, or merges code. Preserve each system's ledger and keep generated state
-local. Use Git local exclusions for `.forgeflow/` and `.pi/herdr-orchestrator/`.
+local. Use Git local exclusions for `.forgeflow/`, `.baa-ton/herdr-orchestrator/`,
+and legacy `.pi/herdr-orchestrator/`. Exclude the runtime subdirectory rather than
+all of `.baa-ton/`, which may contain project configuration.
 
 ## License
 

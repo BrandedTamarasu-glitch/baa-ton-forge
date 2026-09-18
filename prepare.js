@@ -1,10 +1,10 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { realpath, readFile } from 'node:fs/promises';
-import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { loadPreview } from './planner.js';
 import { submissionRecovered } from './recovery.js';
+import { resolveManifestPath } from './manifest-path.js';
 
 const exec = promisify(execFile);
 async function git(cwd, ...args) {
@@ -93,7 +93,7 @@ export async function reconcileLane({ filename, taskId, workflowId, cwd, session
   const target = await checkout(proposed.worktreeCwd ?? cwd);
   const repository = task.repoCwd ? await checkout(task.repoCwd) : root;
   if (target.commonDir !== repository.commonDir) throw new Error('Target belongs to a different repository');
-  const manifest = JSON.parse(await readFile(path.join(root.root, '.pi/herdr-orchestrator/manifest.json'), 'utf8'));
+  const manifest = JSON.parse(await readFile(await resolveManifestPath(root.root), 'utf8'));
   const matches = manifest.workflows?.filter(workflow => workflow.id === workflowId) ?? [];
   if (matches.length !== 1) throw new Error('Expected exactly one durable workflow with that ID');
   const workflow = matches[0];
@@ -119,7 +119,7 @@ export async function verifyLane({ mapped, commit, evidence, cwd }) {
   if (!evidence?.trim()) throw new Error('Supply the checks independently rerun and their results');
   const root = await checkout(cwd, { requireClean: !mapped.repository });
   if (root.root !== mapped.root) throw new Error('Verification must run in the mapped root checkout');
-  const manifest = JSON.parse(await readFile(path.join(root.root, '.pi/herdr-orchestrator/manifest.json'), 'utf8'));
+  const manifest = JSON.parse(await readFile(await resolveManifestPath(root.root), 'utf8'));
   const workflow = manifest.workflows?.find(item => item.id === mapped.workflowId);
   if (!workflow || workflow.cwd !== mapped.target || !workflow.lanes?.length || workflow.lanes.some(lane => !lane.completionReceipt?.id || !lane.completionReceipt?.summary)) throw new Error('Matching durable lane completion receipts are required before root verification');
   const target = await checkout(mapped.target);

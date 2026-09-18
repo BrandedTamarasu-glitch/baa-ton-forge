@@ -5,6 +5,7 @@ import { loadPreview } from './planner.js';
 import { prepareLane } from './prepare.js';
 import { submissionRecovered } from './recovery.js';
 import { nextAction, recommendedAction } from './next-action.js';
+import { resolveManifestPath } from './manifest-path.js';
 
 const receiptPresent = lane => typeof lane.completionReceipt?.id === 'string' && lane.completionReceipt.id.trim() &&
   typeof lane.completionReceipt?.summary === 'string' && lane.completionReceipt.summary.trim();
@@ -45,8 +46,10 @@ export async function laneStatus({ filename, cwd, records = [], sessionFile, env
   const warnings = [];
   let workflows = [];
   let manifestReadable = false;
+  let manifestPath = null;
   try {
-    const manifest = JSON.parse(await readFile(path.join(root, '.pi/herdr-orchestrator/manifest.json'), 'utf8'));
+    manifestPath = await resolveManifestPath(root);
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
     if (!Array.isArray(manifest?.workflows)) throw new Error('workflows must be an array');
     if (manifest.workflows.some(workflow => !workflow || typeof workflow.id !== 'string' || !Array.isArray(workflow.lanes) || workflow.lanes.some(lane => !lane || typeof lane !== 'object'))) throw new Error('invalid workflow or lane entry');
     if (manifest.workflows.some(workflow => ['approvalRequests', 'questionRequests'].some(key => workflow[key] !== undefined &&
@@ -122,7 +125,7 @@ export async function laneStatus({ filename, cwd, records = [], sessionFile, env
     });
   }
   for (const task of tasks) task.nextAction = nextAction(task, facts.get(task.taskId), tasks);
-  return { mode: 'read-only-status', authorization: 'not-assessed', nativeReadiness: 'not-checked', current, sourcePath: preview.sourcePath, sourceSha256: preview.sourceSha256, manifestReadable, staleRecordCount, warnings, tasks, nextAction: recommendedAction(tasks) };
+  return { mode: 'read-only-status', authorization: 'not-assessed', nativeReadiness: 'not-checked', current, sourcePath: preview.sourcePath, sourceSha256: preview.sourceSha256, manifestPath, manifestReadable, staleRecordCount, warnings, tasks, nextAction: recommendedAction(tasks) };
 }
 
 export function renderStatus(report) {

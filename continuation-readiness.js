@@ -1,5 +1,4 @@
 import { readFile, realpath } from 'node:fs/promises';
-import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { laneStatus } from './status.js';
 import { continuationPreview } from './continuation.js';
@@ -17,7 +16,7 @@ export async function checkContinuation(options) {
     return report;
   }
   try {
-    const manifestPath = path.join(status.current.root, '.pi/herdr-orchestrator/manifest.json');
+    const manifestPath = status.manifestPath;
     const before = await readFile(manifestPath);
     const records = options.records ?? [];
     const preview = records.findLast(item => item.kind === 'preview' && item.sourcePath === status.sourcePath);
