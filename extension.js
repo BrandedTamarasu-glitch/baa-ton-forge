@@ -6,6 +6,7 @@ import { laneStatus, renderStatus } from './status.js';
 import { continuationPreview, renderContinuation } from './continuation.js';
 import { checkContinuation } from './continuation-readiness.js';
 import { registerDispatchOnce } from './dispatch-once.js';
+import { registerVerificationHandoff } from './verification-handoff.js';
 import { verificationGuidance, renderVerificationGuidance } from './verification-guidance.js';
 import { recoverSubmission } from './recovery.js';
 import { nativePreflight } from './preflight.js';
@@ -28,6 +29,7 @@ function renderHandoff(prepared) {
 
 export default function adapter(pi) {
   if (pi.on) registerDispatchOnce(pi, records);
+  const verificationHandoff = pi.on && pi.registerTool ? registerVerificationHandoff(pi, records, saveVerification) : null;
   const pending = new Map();
   async function recover(params, ctx) {
     if (pending.size) throw new Error('A plan is still in flight; wait for its result');
@@ -75,10 +77,14 @@ export default function adapter(pi) {
     return mapped;
   }
   async function verify(params, ctx) {
+    verificationHandoff?.assertDirectVerificationAllowed(ctx);
+    return saveVerification(params, ctx);
+  }
+  async function saveVerification(params, ctx, provenance = {}) {
     const mapped = records(ctx).findLast(item => item.kind === 'planned' && item.workflowId === params.workflowId);
     if (!mapped) throw new Error('Workflow is not mapped in this root session; use forgeflow_reconcile_lane with the original brief, task ID, and workflow ID');
     const verified = await verifyLane({ mapped, commit: params.commit, evidence: params.evidence, cwd: ctx.cwd });
-    pi.appendEntry(ENTRY, verified);
+    pi.appendEntry(ENTRY, { ...verified, ...provenance });
     return verified;
   }
   for (const definition of [

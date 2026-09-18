@@ -22,7 +22,7 @@ export async function verificationGuidance(options) {
   const task = status.tasks.find(item => item.taskId === options.taskId);
   if (!task) throw new Error(`Unknown task: ${options.taskId}`);
   const report = { mode: 'verification-guidance', taskId: task.taskId, workflowId: task.workflowId,
-    sourcePath: status.sourcePath, sourceSha256: status.sourceSha256, current: status.current,
+    sourcePath: status.sourcePath, sourceSha256: status.sourceSha256, current: status.current, manifestPath: status.manifestPath,
     state: 'blocked', checksRun: false, verified: false, blockers: [], evidence: null,
     historicalVerification: task.verification, requiredChecks: [], acceptance: [],
     next: 'Resolve the reported blockers and rerun guidance before recording verification. This report authorizes no dispatch, retry, commit or integration.' };

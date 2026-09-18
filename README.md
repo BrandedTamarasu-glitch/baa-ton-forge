@@ -355,6 +355,8 @@ The adapter exposes these native model-callable tools:
 | `forgeflow_continue` | `filename` | Preview one next root step, required checks and stop reason; no execution |
 | `forgeflow_check_readiness` | `filename` | Read-only local/native prerequisite checks; no repair or dispatch |
 | `forgeflow_verification_guidance` | `filename`, `taskId` | Read-only completion prerequisites and required validation; no verification saved |
+| `forgeflow_verification_evidence` | `handoffId` | Actual root tool-result references from the active verification handoff |
+| `forgeflow_draft_verification` | `handoffId`, `results` | Requirement assessments linked to root evidence; saves a draft, not verification |
 | `forgeflow_plan_lanes` | `filename` | Lane preview and saved brief hash |
 | `forgeflow_prepare_lane` | `filename`, `taskId`, optional `createSourceWorkspace` | Checked handoff and saved preparation; automatic source setup by default for explicit `repoCwd` |
 | `forgeflow_reconcile_lane` | `filename`, `taskId`, `workflowId` | Validated recovery of a missing mapping |
@@ -535,6 +537,64 @@ The [native Linux guidance trial](docs/linux-nested-repository-trial.md#native-v
 confirmed missing-receipt, uncommitted-work, and missing-integration blockers,
 followed by independent root validation and saved verification. This does not
 qualify the current manifest layout in native Windows Pi; that retest remains open.
+
+### Root verification handoff
+
+Once a completed lane is committed and integrated, the owning user can enter:
+
+```text
+/forgeflow-verification-handoff "/absolute/path/to/brief.json" task-id
+```
+
+This checks verification prerequisites, saves a local handoff, and starts a Pi
+root validation turn using the current session's model. It does not launch a
+worker. The root receives the exact checkout paths, commit, preparation baseline,
+scope review, validation instructions and acceptance criteria. Brief text does
+not authorize destructive commands or override project policy. Commits and
+integration must already have been handled under their own authorization.
+
+The root uses normal `read`, `bash`/`powershell`, `grep`, `find` and `ls` tools to
+inspect content and run appropriate checks. Forge records their requested and
+observed inputs, then matches their actual results in the current native session
+branch. The evidence tool exposes references; the draft tool requires one
+`pass`, `fail` or `blocked` assessment per requirement, a summary, and supporting
+`toolCallIds` (an unperformed blocked check may have no references). Old session
+results and lane receipts are not eligible root validation evidence. Missing or
+ambiguous results stop drafting. Failed tool attempts remain visible even after
+a later successful retry and prevent this convenience path from saving a pass.
+
+Pi stops at the evidence draft. Review it separately:
+
+```text
+/forgeflow-review-verification
+```
+
+This displays the draft and, when all assessments pass with no failed tool
+results, presents a native confirmation before saving through the existing
+verification function. Checkout/brief/session/manifest identity and the tool
+evidence are rechecked before and after confirmation. The saved record links the
+handoff and draft. No next lane, commit, integration, push or cleanup follows.
+Declining confirmation leaves the draft open and the existing verification
+history unchanged. An uncertain save attempt is not automatically retried.
+
+Tool success alone does not prove acceptance or that a shell command exercised
+the intended tests: root assessments and the relevance of their cited outputs
+still require review. Output excerpts are marked; full results stay in the native
+session. The hook limits model tools during an active handoff and blocks direct
+verification, but shell tools are not a filesystem sandbox. Existing command,
+approval and project policies remain authoritative. No policy bypass is granted.
+
+Use `/forgeflow-cancel-verification` from the idle owning session to end an open
+handoff while retaining its evidence. This changes only local handoff history,
+not the Baa-ton workflow or resources. Reload never resumes validation commands
+implicitly; an intact saved draft can still be reviewed, otherwise cancel and
+start a fresh handoff after inspecting the stopped turn. Missing session evidence
+must not be reconstructed with fabricated outputs. Historical verification is
+not erased by a failed or cancelled recheck.
+
+Automated regression coverage includes real Git checkouts and both CI platforms.
+The [native handoff trial procedure](docs/verification-handoff-trial.md) is ready;
+live Pi qualification of this new handoff remains outstanding.
 
 ### Native preparation preflight
 
