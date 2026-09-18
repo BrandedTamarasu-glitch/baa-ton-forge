@@ -11,6 +11,7 @@ import { registerVerificationAudit } from './verification-audit.js';
 import { verificationGuidance, renderVerificationGuidance } from './verification-guidance.js';
 import { recoverSubmission } from './recovery.js';
 import { nativePreflight } from './preflight.js';
+import { nativeSessionOptions } from './native-pi-identity.js';
 import { readManifestSnapshot } from './manifest-snapshot.js';
 import { isDeepStrictEqual } from 'node:util';
 
@@ -29,6 +30,7 @@ function renderHandoff(prepared) {
 }
 
 export default function adapter(pi) {
+  const sessionProof = (ctx, signal) => nativeSessionOptions(pi, ctx, signal);
   if (pi.registerTool) registerVerificationAudit(pi);
   if (pi.on) registerDispatchOnce(pi, records);
   const verificationHandoff = pi.on && pi.registerTool ? registerVerificationHandoff(pi, records, saveVerification) : null;
@@ -50,7 +52,7 @@ export default function adapter(pi) {
     const previous = history.findLast(item => item.kind === 'preview' && item.sourcePath === filename);
     const prepared = await prepareLane({ filename, taskId: params.taskId, preview: previous, cwd: ctx.cwd, records: history });
     const sessionFile = ctx.sessionManager.getSessionFile();
-    const nativeReadiness = await nativePreflight({ prepared, sessionFile, exec: pi.exec?.bind(pi), signal, ensureSource: params.createSourceWorkspace !== false });
+    const nativeReadiness = await nativePreflight({ prepared, sessionFile, ...sessionProof(ctx, signal), exec: pi.exec?.bind(pi), signal, ensureSource: params.createSourceWorkspace !== false });
     await revalidate(prepared, history);
     const record = { ...prepared, sessionFile, nativeReadiness };
     pi.appendEntry(ENTRY, record);
@@ -69,7 +71,7 @@ export default function adapter(pi) {
   }
   async function readiness(params, ctx, signal) {
     if (Object.keys(params).some(key => key !== 'filename')) throw new Error('Readiness is read-only; only filename is accepted');
-    return checkContinuation({ filename: path.resolve(ctx.cwd, params.filename), cwd: ctx.cwd, records: records(ctx), sessionFile: ctx.sessionManager.getSessionFile(), exec: pi.exec?.bind(pi), signal });
+    return checkContinuation({ filename: path.resolve(ctx.cwd, params.filename), cwd: ctx.cwd, records: records(ctx), sessionFile: ctx.sessionManager.getSessionFile(), ...sessionProof(ctx, signal), exec: pi.exec?.bind(pi), signal });
   }
   async function reconcile(params, ctx) {
     const mapped = await reconcileLane({ filename: path.resolve(ctx.cwd, params.filename), taskId: params.taskId, workflowId: params.workflowId, cwd: ctx.cwd, sessionFile: ctx.sessionManager.getSessionFile() });
@@ -214,7 +216,7 @@ export default function adapter(pi) {
       await revalidate(localPrepared, history);
       if (!nativeReadiness) throw new Error('Preparation predates native preflight; prepare the lane again');
       if (sessionFile !== ctx.sessionManager.getSessionFile()) throw new Error('Root session changed since prepare; resume the owning session');
-      const fresh = await nativePreflight({ prepared, sessionFile, exec: pi.exec?.bind(pi), signal: ctx.signal });
+      const fresh = await nativePreflight({ prepared, sessionFile, ...sessionProof(ctx, ctx.signal), exec: pi.exec?.bind(pi), signal: ctx.signal });
       if (!isDeepStrictEqual(fresh, nativeReadiness)) throw new Error('Native root or source binding changed since prepare; prepare the lane again');
       const owner = { paneId: prepared.paneId, workspaceId: prepared.workspaceId, sessionFile };
       const { snapshot: manifestSnapshot } = await readManifestSnapshot(prepared.root, owner);

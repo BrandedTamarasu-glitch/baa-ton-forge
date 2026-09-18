@@ -6,6 +6,7 @@ import { ensureSourceWorkspace } from './source-workspace.js';
 import { canonicalPath, resolveManifestPath } from './manifest-path.js';
 import { controllerRegistration } from './controller-registration.js';
 import { assertLiveSession } from './session-path.js';
+import { assertNativePiIdentity } from './native-pi-identity.js';
 
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 function required(value, key, context) {
@@ -35,7 +36,7 @@ export async function nativePreflight(options) {
   });
 }
 
-async function probe({ prepared, sessionFile, exec, env = process.env, signal }) {
+async function probe({ prepared, sessionFile, sessionId, proveSession, exec, env = process.env, signal }) {
   const pane = identity(env);
   if (!sessionFile || !path.isAbsolute(sessionFile)) throw new Error('Native Pi session identity is unavailable; resume the owning session before preparing');
   if (typeof exec !== 'function') throw new Error('Native Herdr inspection is unavailable; load this adapter in Pi before preparing');
@@ -55,9 +56,13 @@ async function probe({ prepared, sessionFile, exec, env = process.env, signal })
   const agent = (await inspect(['agent', 'get', pane.paneId])).agent;
   if (!agent || agent.pane_id !== pane.paneId || agent.workspace_id !== pane.workspaceId || agent.agent !== 'pi' ||
       (root.target_kind === 'name' && agent.name !== root.target)) throw new Error('Live agent differs from the registered root; stop and inspect native ownership');
-  await assertLiveSession(agent.agent_session, sessionFile, env);
+  let sessionIdentity;
+  if (agent.agent_session?.kind === 'id') {
+    if (typeof proveSession !== 'function') throw new Error('Herdr reports a Pi session UUID; fresh native Baa-ton identity proof is required. Update Baa-ton and Forge; do not infer a path from the UUID or reset the root');
+    sessionIdentity = await assertNativePiIdentity(await proveSession(), { agentSession: agent.agent_session, sessionId, sessionFile, pane, registrationId: mapping.id, root: prepared.root, env });
+  } else await assertLiveSession(agent.agent_session, sessionFile, env);
   const readiness = { version: 1, root: { registrationId: mapping.id, configPath, manifestPath, target: root.target, targetKind: root.target_kind,
-    ...pane, sessionFile, checkout: prepared.root }, source: null };
+    ...pane, sessionFile, checkout: prepared.root, ...(sessionIdentity ? { sessionIdentity } : {}) }, source: null };
   if (!prepared.planArguments.worktreeCwd) return { readiness };
   const inventory = await inspect(['worktree', 'list', '--cwd', prepared.target]);
   const source = inventory.source;

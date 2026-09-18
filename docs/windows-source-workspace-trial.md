@@ -84,8 +84,11 @@ This covers the two Windows follow-ups after PR #19: historical ledgers for
 different roots, and the live-agent session path versus the native Pi session.
 Linux/Windows fixture tests are not live Windows qualification.
 
-Fully restart Pi in the same owning pane and resume the same session after
-updating Forge. Before any new preparation:
+For UUID metadata, install the Baa-ton build containing
+[native identity PR #10](https://github.com/zachristmas/baa-ton/pull/10) and the
+Forge consumer update. Load both updated extensions in the same owning pane and
+session. A restart without the code update does not repair this issue. Before
+any new preparation:
 
 1. Read the unique current pane/workspace registration and its
    `program.parent_manifest_path`. Record the canonical checkout and selected
@@ -98,9 +101,14 @@ updating Forge. Before any new preparation:
    `PI_SESSION_FILE` if present. Render each through `JSON.stringify`, not a
    terminal interpretation of backslashes or control characters. Do not paste
    credentials or unrelated environment variables.
-3. If the strings differ, check filesystem canonical paths. Only equivalent
-   existing session files qualify as aliases. Confirm pane, workspace and Pi
-   harness identity independently; a matching UUID does not replace these checks.
+3. For `kind: "path"`, differing spellings must resolve to the same existing
+   session file. For `kind: "id"`, invoke the registered, read-only
+   `herdr_root_identity`. Require `source: "baa-ton-native-pi"`, version 1,
+   matching registration/pane/workspace/checkout, the native UUID and a canonical
+   session path. The native extension must prove this from its own live runtime
+   and file header, not the filename suffix. `PI_SESSION_FILE` may be absent.
+   If the native tool/bridge is unavailable or rejects proof, stop. Record the
+   exact error; do not manufacture proof, reset roots, or change ledger history.
 4. Continue the authorized preparation/planning steps above. When two layouts
    exist, expect `nativeReadiness.root.manifestPath`, the planning snapshot, and
    status to select the registered ledger. Confirm the alternate historical file
@@ -115,10 +123,10 @@ If session ownership is blocked:
   `\u0007` or `\u0002` are data corruption, not separator aliases. Do not guess
   the intended characters or strip them. The native Baa-ton/Herdr path producer
   needs repair before Forge can accept that identity.
-- Once native agent metadata is correct, use the registered
-  `herdr_reconcile_root` in that affected live root (with authorization for its
-  identity refresh), then run `herdr_doctor`. Reconciliation reads the live agent
-  metadata; repeating it while that input is corrupt is not a repair.
+- A missing/conflicting UUID proof requires the native identity fix, not
+  `herdr_reconcile_root`. Reconcile only separately demonstrated registration
+  drift in the affected live root under existing authorization. Do not repeat
+  reconciliation or restart as a workaround for rejected session evidence.
 - If doctor still reports `root-identity=fail`, retain its complete per-root
   diagnostic. It may name a different root or a separate native identity problem.
   Report that evidence to Baa-ton and stop; Forge path equivalence does not make

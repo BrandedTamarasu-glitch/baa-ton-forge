@@ -19,7 +19,7 @@ export async function sameSessionPath(actual, expected) {
 }
 
 export async function assertLiveSession(agentSession, sessionFile, env = process.env) {
-  const values = { liveAgentSession: agentSession?.value ?? null, nativePiSession: sessionFile,
+  const values = { liveAgentSessionKind: agentSession?.kind ?? null, liveAgentSession: agentSession?.value ?? null, nativePiSession: sessionFile,
     PI_SESSION_FILE: env.PI_SESSION_FILE ?? null };
   const malformed = Object.values(values).some(value => typeof value === 'string' && control.test(value));
   if (agentSession?.kind === 'path' && !malformed && await sameSessionPath(agentSession.value, sessionFile) &&

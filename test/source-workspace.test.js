@@ -175,8 +175,8 @@ test('removed completed source may be replaced, but a still-live unbound source 
   assert.equal((await f.audit()).attempts.length, 2);
 });
 
-for (const [directory, dual] of [['.pi/herdr-orchestrator', false], ['.baa-ton/herdr-orchestrator', false], ['.baa-ton/herdr-orchestrator', true], ['.pi/herdr-orchestrator', true]])
-test(`native preparation and guarded planning use ${directory}${dual ? " with historical alternate" : ""}; submission never creates sources`, async t => {
+for (const [directory, dual, uuidMode] of [['.pi/herdr-orchestrator', false], ['.baa-ton/herdr-orchestrator', false], ['.baa-ton/herdr-orchestrator', true], ['.pi/herdr-orchestrator', true], ['.baa-ton/herdr-orchestrator', false, true]])
+test(`native preparation and guarded planning use ${directory}${dual ? " with historical alternate" : ""}${uuidMode ? " and native UUID proof" : ""}; submission never creates sources`, async t => {
   const f = await fixture(t, directory), entries = [], tools = new Map(), events = new Map();
   const manifestPath = path.join(f.prepared.root, directory, 'manifest.json');
   await mkdir(path.dirname(manifestPath), { recursive: true });
@@ -194,9 +194,18 @@ test(`native preparation and guarded planning use ${directory}${dual ? " with hi
   const saved = Object.fromEntries(Object.keys(f.native.env).map(key => [key, process.env[key]]));
   Object.assign(process.env, f.native.env);
   t.after(() => { for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
-  adapter({ exec: f.exec, registerTool: tool => tools.set(tool.name, tool), registerCommand() {}, on: (name, fn) => events.set(name, fn),
+  const sessionId = '01a0b04d-0bef-7207-b486-d51d62f0e3dc';
+  let proofCalls = 0;
+  if (uuidMode) f.native.responses.agent.agent.agent_session = { kind: 'id', value: sessionId };
+  const proveSession = async () => {
+    proofCalls++;
+    return { version: 1, source: 'baa-ton-native-pi', registrationId: 'registered-root', paneId: env.HERDR_PANE_ID,
+      workspaceId: env.HERDR_WORKSPACE_ID, checkout: f.prepared.root, sessionId, sessionPath: f.native.sessionFile,
+      nativeSession: { ...f.native.responses.agent.agent.agent_session } };
+  };
+  adapter({ events: { emit(channel, request) { assert.equal(channel, 'baa-ton:pi-root-identity:v1'); request.respond(proveSession()); } }, exec: f.exec, registerTool: tool => tools.set(tool.name, tool), registerCommand() {}, on: (name, fn) => events.set(name, fn),
     appendEntry: (customType, data) => entries.push({ type: 'custom', customType, data }) });
-  const ctx = { cwd: f.root, sessionManager: { getBranch: () => entries, getSessionFile: () => f.native.sessionFile }, ui: { notify() {} } };
+  const ctx = { cwd: f.root, sessionManager: { getBranch: () => entries, getSessionFile: () => f.native.sessionFile, getSessionId: () => sessionId }, ui: { notify() {} } };
   const call = (name, params) => tools.get(name).execute('call', params, undefined, undefined, ctx);
   await writeFile(path.join(f.root, 'README.md'), 'Unrelated controller instructions\n');
   git(f.root, 'add', 'README.md');
@@ -225,14 +234,15 @@ test(`native preparation and guarded planning use ${directory}${dual ? " with hi
   assert.equal(f.creations(), 1);
   await writeFile(manifestPath, JSON.stringify({ workflows: [{ id: 'herdr-test', status: 'planned', cwd: prepared.target,
     objective: prepared.planArguments.objective, lanes: prepared.planArguments.lanes,
-    taskBinding: { rootPaneId: env.HERDR_PANE_ID, workspaceId: env.HERDR_WORKSPACE_ID, rootSessionPath: f.native.responses.agent.agent.agent_session.value },
+    taskBinding: { rootPaneId: env.HERDR_PANE_ID, workspaceId: env.HERDR_WORKSPACE_ID, rootSessionPath: uuidMode ? f.native.sessionFile : f.native.responses.agent.agent.agent_session.value },
     worktreeBinding: { repoParent: { checkoutPath: prepared.repository.root, workspaceId: 'native-source-1' } } }] }));
   const report = await checkContinuation({ filename: f.filename, cwd: f.root, records: entries.map(item => item.data),
-    sessionFile: f.native.sessionFile, env: f.native.env, exec: async (...args) => {
+    sessionFile: f.native.sessionFile, sessionId, proveSession, env: f.native.env, exec: async (...args) => {
       await writeFile(path.join(f.root, 'journal.txt'), 'Concurrent journal edit during native inspection');
       return f.exec(...args);
     } });
   assert.equal(report.readiness.state, 'passed', JSON.stringify(report));
+  if (uuidMode) assert.ok(proofCalls >= 5, 'preparation, source probes, planning and readiness request fresh proof');
   assert.match(report.readiness.checks[0], /unrelated controller edits allowed/);
   assert.equal(await readFile(path.join(f.root, 'README.md'), 'utf8'), 'Concurrent controller instruction edit\n');
   assert.notEqual(git(f.root, 'diff', '--cached'), '');
