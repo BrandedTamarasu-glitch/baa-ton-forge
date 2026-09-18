@@ -45,6 +45,9 @@ preparation and verification-record checks are not involved.
 - Saves workflow mappings and root verification in the active Pi session branch.
 - Recovers missing mappings from matching durable Baa-ton manifests.
 - Shows task status, owning roots, completion receipts, and preparation blockers.
+- Previews the next root step and checks local/native readiness without mutation.
+- Hands off one user-confirmed dispatch to native Baa-ton, with fresh readiness
+  checks and a session audit; no automatic retry or next-lane progression.
 
 Install once and use it from each project's own Baa-ton root. The adapter's
 development checkout does not need to control other projects.
@@ -154,14 +157,24 @@ The subsequent [automatic source-workspace trial](docs/linux-nested-repository-t
 passed live on Linux: read-only preparation rejected the missing source without
 creating resources; automatic preparation created one shell-only workspace;
 repeat preparation reused it with an unchanged single-attempt audit; and actual
-`herdr_plan` succeeded with a saved mapping and manifest snapshot. It stopped
-before dispatch. Linux and Windows CI also pass the portable source-workspace
+`herdr_plan` succeeded with a saved mapping and manifest snapshot. That initial
+milestone stopped before dispatch. The subsequent
+[single-dispatch qualification](docs/linux-nested-repository-trial.md#single-dispatch-and-independent-verification)
+completed the same workflow through native dispatch, delivered completion and
+independent root verification at `fcdb053323c444002fc4641e4919c2628ccef1a8`.
+Startup evidence matched `pi / openai-codex / gpt-5.6-luna / low / subscription`.
+The worker left an uncommitted change; the root separately committed it using
+normal hooks and integrated it through the guarded fast-forward path. Dispatch
+did not automatically commit, integrate or verify the result.
+
+Linux and Windows CI also pass the portable source-workspace
 tests, which use a fixture Herdr transport. The separate native Windows
 automatic-binding test for [issue #5](https://github.com/BrandedTamarasu-glitch/baa-ton-forge/issues/5)
 remains outstanding.
 
-This is an early local integration. It does not automatically create worktrees,
-dispatch, merge, cancel workflows, or retire resources. Editing a brief changes
+This is an early local integration. Dispatch requires an explicit user-confirmed
+handoff or a separately authorized native Baa-ton call. It does not automatically
+create worktrees, merge, cancel workflows, or retire resources. Editing a brief changes
 its hash; it does not cancel older workflows. Inspect existing plans before
 creating replacements. Live harness availability and provider/model qualification
 remain Baa-ton's responsibility. Run `herdr_doctor` in the owning root before
@@ -423,7 +436,7 @@ the inspection is not a lock. Baa-ton must revalidate before actual dispatch.
 
 ### Dispatch one existing workflow
 
-After the read-only readiness trial, enter this command directly in the owning,
+After checking readiness, enter this command directly in the owning,
 idle Pi root:
 
 ```text
@@ -453,6 +466,12 @@ or send failure remains unresolved and is not automatically retried or reset.
 Inspect native durable state before recovery; this version deliberately provides
 no retry/recovery command. These are orchestration guards, not a filesystem or
 process sandbox. Independent completion verification remains a later root step.
+
+The [Linux live trial](docs/linux-nested-repository-trial.md#single-dispatch-and-independent-verification)
+exercised confirmation, one native dispatch, audit recording, receipt delivery,
+and a separate root verification phase. If a worker leaves uncommitted edits,
+inspect them and obtain authorization for commit/integration before saving native
+verification. A completion receipt does not guarantee a clean or committed result.
 
 ### Native preparation preflight
 

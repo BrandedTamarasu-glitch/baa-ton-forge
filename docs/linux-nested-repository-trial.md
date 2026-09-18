@@ -151,6 +151,65 @@ The brief, creation audit, session records, and workflow manifest remain local
 and outside versioned application files. The report records identifiers and
 reported outcomes only; it does not copy those runtime files into this repository.
 
+## Single-dispatch and independent verification
+
+Recorded 2026-09-18 after Forge PRs
+[10](https://github.com/BrandedTamarasu-glitch/baa-ton-forge/pull/10)
+(next-action status),
+[11](https://github.com/BrandedTamarasu-glitch/baa-ton-forge/pull/11)
+(continuation preview),
+[12](https://github.com/BrandedTamarasu-glitch/baa-ton-forge/pull/12)
+(read-only readiness), and
+[13](https://github.com/BrandedTamarasu-glitch/baa-ton-forge/pull/13)
+(single-dispatch handoff). This is the continuation of `herdr-3fc3faf2` above,
+not a replacement workflow. Evidence is the owning root's reports and pasted
+native output; the documentation update did not rerun the trial.
+
+Status first detected a newly opened Pi session and directed the user to resume
+the owner. In the original `w18:p1` / `w18` session, status found the existing
+mapping. Continuation preview proposed checking authorization/readiness, and the
+read-only readiness command passed checkout, dependency, profile, native root,
+source binding and target availability checks without dispatch.
+
+| Evidence | Recorded result |
+| --- | --- |
+| Workflow / task | `herdr-3fc3faf2` / `auto-source-writer` |
+| Owning session ID | `01a0b0c8-d5a4-725b-8d92-f0d581dbe4fc` |
+| Brief SHA-256 | `a66607b3ce6772da7bc0d65989bb36d35cb440ed78231afbb1fda1cbe6a06e02` |
+| Dispatch intent | `d85304d3-b603-416c-8807-a8dace8baacd`, native UI confirmation |
+| Intent / attempt / result times (UTC) | `16:34:58.059` / `16:35:04.146` / `16:35:14.344` |
+| Native call | `herdr_dispatch`, `workflowId: herdr-3fc3faf2`, `execute: true`; no restart or confirm override |
+| Recorded outcome | `dispatch-reported`, `isError: false`; root stopped afterward |
+| Completion notification ID | `herdr-rel-a3a84ef7-2a2b-41e7-abf2-5526054068f1` |
+| Manifest receipt reported on inspection | `incarnation-18e08f54-bd5`, delivered |
+| Writer checkout / branch | `.pi/auto-source-trial/writer` / `trial/auto-writer` |
+| Observed launch profile | `pi / openai-codex / gpt-5.6-luna / low / subscription`; nonce/session matched; worker session confirmed model and thinking |
+| Initial inspection | HEAD remained `f86dd5aec53ea9746dd8c95c2e0ea5b71fe1b5bf`; only `status.txt` had unstaged edits |
+| Final verified commit | `fcdb053323c444002fc4641e4919c2628ccef1a8` |
+| Final result | Native verification saved; Forge status `verified`, no further lane action |
+
+The delivered receipt was initially treated as an unverified claim. Independent
+inspection found exact working bytes `ready\n`, while HEAD still held
+`pending\n`. Scope and diff checks passed, but commit, clean checkout and
+application integration prerequisites were missing. The worker did **not**
+complete those steps.
+
+After separate explicit authorization, the root committed only `status.txt`
+using normal hooks and performed a guarded application fast-forward. It then
+independently confirmed exact `ready\n` bytes, the scoped diff, passing diff
+checks and clean application/writer checkouts before saving native verification.
+Controller HEAD remained unchanged. One worker was dispatched; its receipt's
+"No workers launched" claim was retained as a claim of no nested workers, not a
+description of the overall trial.
+
+No redispatch, push, resource closure, cleanup or other-lane progression occurred.
+This qualifies the reported Linux handoff and exact observed profile, not every
+provider, Windows live dispatch, automatic verification or included subscription
+billing. The trial did not exercise live cancellation, crash recovery or failed
+audit writes; automated regressions cover those guard paths. Runtime state stays
+local and Git-excluded. The adapter suite at PR #13 passed 86 tests locally;
+Linux/Windows CI passed the selected cross-platform regression suite.
+
 ## Current issue coverage
 
 - [Issue #1](https://github.com/BrandedTamarasu-glitch/baa-ton-forge/issues/1):
