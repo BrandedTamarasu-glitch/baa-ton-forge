@@ -421,6 +421,39 @@ repair, preparation record, planning, dispatch or automatic retry occurs.
 Concurrent detected changes to local evidence or the manifest stop the check;
 the inspection is not a lock. Baa-ton must revalidate before actual dispatch.
 
+### Dispatch one existing workflow
+
+After the read-only readiness trial, enter this command directly in the owning,
+idle Pi root:
+
+```text
+/forgeflow-dispatch-once "/absolute/path/to/brief.md"
+```
+
+This is a **mutating, opt-in handoff**, separate from preview and readiness.
+It requires native `herdr_dispatch` and an interactive confirmation showing the
+exact workflow, task and profile. Cancelling queues nothing. After confirmation,
+Forge rechecks readiness, saves a session intent and starts one Pi model turn to
+request the exact native `herdr_dispatch` call. That turn consumes model usage.
+Pi does not expose direct cross-extension tool execution; Forge neither imports
+Baa-ton internals nor substitutes shell commands. Baa-ton retains its own
+approval and startup qualification checks, which may prompt separately.
+
+The tool-call guard checks readiness again and saves an attempt before allowing
+the native call. It rejects different arguments, restart/confirmation overrides,
+other tools during the handoff, and repeated attempts. It records the native
+result as dispatch-reported, cancelled, approval-required, error or unknown;
+none means completion or verification. Further tools are blocked for that turn,
+and no next lane, integration or cleanup is authorized.
+
+Use `/forgeflow-dispatch-audit` to inspect the latest intent, attempt and result
+in the current session branch without starting a model turn. Resume the owning
+session to retain these guards. A crash, missing result, failed readiness check
+or send failure remains unresolved and is not automatically retried or reset.
+Inspect native durable state before recovery; this version deliberately provides
+no retry/recovery command. These are orchestration guards, not a filesystem or
+process sandbox. Independent completion verification remains a later root step.
+
 ### Native preparation preflight
 
 The native `forgeflow_prepare_lane` tool and slash command perform native
