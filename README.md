@@ -349,6 +349,22 @@ this view. Missing records are not evidence that a task has never run; missing
 or ambiguous workflows require ledger inspection, not automatic redispatch.
 The tool does not scan other projects or import another session's records.
 
+Each task now includes a `nextAction` with a code, category, explanation and
+optional tool suggestion. The report also suggests one next action across the
+brief. Categories distinguish `ready-for-root`, `waiting`, `blocked`,
+`awaiting-verification`, `awaiting-answer`, `awaiting-approval` and `complete`.
+For example, all durable receipts with notification delivery still pending
+produce **Independently verify completion**: the root need not wait for another
+notification. A receipt alone never releases a dependent task.
+
+Advice uses saved and local evidence only. `authorization: "not-assessed"` and
+`nativeReadiness: "not-checked"` are explicit in the report. A mapped, planned
+workflow suggests checking authorization and readiness before dispatch; it does
+not dispatch. Only recorded parent requests produce approval/question advice.
+Old preparations, unresolved submissions and changed ownership remain blockers.
+Preparing a lane can create a source workspace; use `createSourceWorkspace:false`
+when resource creation is not authorized. Status itself creates nothing.
+
 Status does not save adapter records, dispatch, run tests, or change checkouts.
 For tasks without a mapping or submission it evaluates the read-only preparation
 checks, reporting the first failure. A passed check does not establish live
