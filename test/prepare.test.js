@@ -10,6 +10,9 @@ import adapter from '../extension.js';
 import { recoverSubmission, submissionRecovered } from '../recovery.js';
 import { laneStatus } from '../status.js';
 import { setTimeout as delay } from 'node:timers/promises';
+import { nativeFixture } from './native-fixture.js';
+import { nativePreflight } from '../preflight.js';
+import { readManifestSnapshot } from '../manifest-snapshot.js';
 
 const env = { HERDR_ENV: '1', HERDR_PANE_ID: 'test:p1', HERDR_WORKSPACE_ID: 'test' };
 function git(cwd, ...args) { return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim(); }
@@ -54,6 +57,102 @@ async function rejectedSubmission(t, rejection = recoveryCases[0][1], matchingWo
   ];
   return { ...f, entries, sessionFile: '/fixture/session.jsonl', prepared, manifestPath };
 }
+
+test('native preflight rejects missing roots, foreign sessions and absent or ambiguous source workspaces', async t => {
+  const f = await fixture(t), prepared = await prepareLane(f), native = await nativeFixture(f, env);
+  const options = { prepared, sessionFile: native.sessionFile, exec: native.exec, env: native.env };
+  const passed = await nativePreflight(options);
+  assert.equal(passed.root.sessionFile, native.sessionFile);
+  assert.equal(passed.source.workspaceId, 'source-workspace');
+  assert.deepEqual(native.calls.map(call => call.args.slice(0, 2)), [['agent', 'get'], ['worktree', 'list'], ['workspace', 'list']]);
+  const baseline = structuredClone(native.responses);
+  for (const [change, error] of [
+    [value => { value.agent.agent.agent_session.value = '/different-session'; }, /Live root session/],
+    [value => { value.agent.agent.pane_id = 'wrong'; }, /Live agent differs/],
+    [value => { delete value.worktree.source.source_workspace_id; }, /missing source_workspace_id/],
+    [value => { value.workspace.workspaces = []; }, /source workspace no longer exists/],
+    [value => { value.workspace.workspaces.push(value.workspace.workspaces[0]); }, /source workspace no longer exists/],
+    [value => { value.worktree.worktrees.push(value.worktree.worktrees[0]); }, /exactly once/],
+    [value => { value.worktree.worktrees[0].open_workspace_id = 'occupied'; }, /already has an open/],
+    [value => { value.workspace.workspaces[0].worktree = { repo_key: 'foreign', checkout_path: f.root }; }, /metadata disagrees/],
+  ]) {
+    Object.assign(native.responses, structuredClone(baseline)); change(native.responses);
+    await assert.rejects(nativePreflight(options), error);
+  }
+  Object.assign(native.responses, baseline);
+  await assert.rejects(nativePreflight({ ...options, exec: undefined }), /inspection is unavailable/);
+  await assert.rejects(nativePreflight({ ...options, exec: async () => ({ code: 1, stdout: '' }) }), /failed; inspect/);
+  await assert.rejects(nativePreflight({ ...options, exec: async () => ({ code: 0, stdout: 'not json' }) }), /invalid JSON/);
+  await writeFile(native.configPath, JSON.stringify({ ...native.config, orchestrators: [] }));
+  await assert.rejects(nativePreflight(options), /registered controller root/);
+  await writeFile(native.configPath, JSON.stringify({ ...native.config, orchestrators: [native.config.orchestrators[0], native.config.orchestrators[0]] }));
+  await assert.rejects(nativePreflight(options), /unique registered/);
+  const foreignConfig = structuredClone(native.config);
+  foreignConfig.orchestrators[0].program.parent_manifest_path = path.join(f.target, '.pi/herdr-orchestrator/manifest.json');
+  await writeFile(native.configPath, JSON.stringify(foreignConfig));
+  await assert.rejects(nativePreflight(options), /another checkout/);
+  await writeFile(native.configPath, JSON.stringify(native.config));
+  const other = await fixture(t);
+  native.responses.worktree.source.source_checkout_path = other.root;
+  native.responses.worktree.source.repo_root = other.root;
+  await assert.rejects(nativePreflight(options), /does not match the declared repository/);
+  native.responses.worktree.source.source_checkout_path = f.root;
+  native.responses.worktree.source.repo_root = f.root;
+  const readOnlyRoot = { ...prepared, target: f.root, planArguments: { ...prepared.planArguments } };
+  delete readOnlyRoot.planArguments.worktreeCwd;
+  native.calls.length = 0;
+  assert.equal((await nativePreflight({ ...options, prepared: readOnlyRoot })).source, null);
+  assert.equal(native.calls.length, 1, 'root-only review does not require an unrelated source workspace');
+});
+
+test('saved submission fingerprint tolerates only owning root activity, not durable effects', async t => {
+  const f = await rejectedSubmission(t, recoveryCases[1][1]);
+  const owner = { paneId: env.HERDR_PANE_ID, workspaceId: env.HERDR_WORKSPACE_ID, sessionFile: f.sessionFile };
+  const manifest = { version: 2, workflows: [], parentGoal: { status: 'active', objective: 'Existing goal' }, sessionLog: {
+    kind: 'root', paneId: owner.paneId, workspaceId: owner.workspaceId, status: 'active', lastResponseAt: 'before',
+    sessionRef: { provider: 'pi', sessionId: f.sessionFile, nativeHandle: { kind: 'path', value: f.sessionFile } },
+  } };
+  await writeFile(f.manifestPath, JSON.stringify(manifest));
+  f.entries[1].data.manifestSnapshot = (await readManifestSnapshot(f.root, owner)).snapshot;
+  f.entries[1].data.sessionFile = f.sessionFile;
+  await delay(5);
+  f.entries[1].timestamp = new Date().toISOString(); f.entries[2].timestamp = f.entries[1].timestamp;
+  const activity = structuredClone(manifest); activity.sessionLog.status = 'idle'; activity.sessionLog.lastResponseAt = 'after';
+  await writeFile(f.manifestPath, JSON.stringify(activity, null, 2));
+  const record = await recoverSubmission(f);
+  assert.equal(record.evidence.manifestProof, 'saved-pre-submission-snapshot');
+  assert.notEqual(record.evidence.before.rawSha256, record.evidence.after.rawSha256);
+  assert.equal(record.evidence.before.stateSha256, record.evidence.after.stateSha256);
+  for (const change of [
+    value => { value.version = 99; },
+    value => { value.owner.sessionFile = '/foreign'; },
+    value => { value.capturedAt = new Date(Date.parse(f.entries[1].timestamp) + 10000).toISOString(); },
+    value => { value.stateSha256 = 'invalid'; },
+  ]) {
+    const entries = structuredClone(f.entries); change(entries[1].data.manifestSnapshot);
+    await assert.rejects(recoverSubmission({ ...f, entries }), /snapshot/);
+  }
+  for (const change of [
+    value => { value.workflows.push({ id: 'new', objective: 'new workflow' }); },
+    value => { value.parentGoal.status = 'paused'; },
+    value => { value.sessionLog.sessionRef.sessionId = 'foreign'; },
+    value => { value.sessionLog.unknown = 'new state'; },
+    value => { value.queue = { items: [] }; },
+  ]) {
+    const changed = structuredClone(activity); change(changed);
+    await writeFile(f.manifestPath, JSON.stringify(changed));
+    await assert.rejects(recoverSubmission(f), /differs from the saved/);
+  }
+  await rm(f.manifestPath);
+  await assert.rejects(recoverSubmission(f), /differs from the saved/);
+  // A first plan can snapshot genuine manifest absence without inventing a file.
+  f.entries[1].data.manifestSnapshot = (await readManifestSnapshot(f.root, owner)).snapshot;
+  await delay(5);
+  f.entries[1].timestamp = new Date().toISOString(); f.entries[2].timestamp = f.entries[1].timestamp;
+  assert.equal((await recoverSubmission(f)).evidence.after.exists, false);
+  await writeFile(f.manifestPath, JSON.stringify({ version: 2, workflows: [] }));
+  await assert.rejects(recoverSubmission(f), /differs from the saved/);
+});
 
 for (const [kind, rejection, reason] of recoveryCases) test(`native ${kind} recovery retains failed history across reload and permits only that attempt to retry`, async t => {
   const f = await rejectedSubmission(t, rejection), original = structuredClone(f.entries);
@@ -280,13 +379,17 @@ test('verification requires a durable receipt, exact lane HEAD and integrated co
 
 test('extension records exact successful plan mapping and blocks changed arguments', async t => {
   const f = await fixture(t);
+  const native = await nativeFixture(f, env);
+  const oldConfigDir = process.env.HERDR_PLUGIN_CONFIG_DIR;
+  process.env.HERDR_PLUGIN_CONFIG_DIR = native.env.HERDR_PLUGIN_CONFIG_DIR;
+  t.after(() => { if (oldConfigDir === undefined) delete process.env.HERDR_PLUGIN_CONFIG_DIR; else process.env.HERDR_PLUGIN_CONFIG_DIR = oldConfigDir; });
   const saved = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]));
   Object.assign(process.env, env);
   t.after(() => { for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
   const commands = new Map(), events = new Map(), entries = [];
   const notifications = [];
-  adapter({ registerCommand: (name, command) => commands.set(name, command), on: (name, handler) => events.set(name, handler), appendEntry: (customType, data) => entries.push({ type: 'custom', customType, data }), sendMessage() {} });
-  const ctx = { cwd: f.root, sessionManager: { getBranch: () => entries }, ui: { notify: (...args) => notifications.push(args) } };
+  adapter({ exec: native.exec, registerCommand: (name, command) => commands.set(name, command), on: (name, handler) => events.set(name, handler), appendEntry: (customType, data) => entries.push({ type: 'custom', customType, data }), sendMessage() {} });
+  const ctx = { cwd: f.root, sessionManager: { getBranch: () => entries, getSessionFile: () => native.sessionFile }, ui: { notify: (...args) => notifications.push(args) } };
   await commands.get('forgeflow-plan-lanes').handler(f.filename, ctx);
   await commands.get('forgeflow-prepare-lane').handler(`"${f.filename}" writer`, ctx);
   const prepared = entries.at(-1).data;
@@ -294,8 +397,21 @@ test('extension records exact successful plan mapping and blocks changed argumen
   const event = { toolName: 'herdr_plan', toolCallId: 'call-1', input: prepared.planArguments };
   const wrong = { ...event, input: { ...event.input, worktreeCwd: f.root } };
   assert.equal((await events.get('tool_call')(wrong, ctx)).block, true);
+  const entryCount = entries.length;
+  delete native.responses.worktree.source.source_workspace_id;
+  const missingSource = await events.get('tool_call')(event, ctx);
+  assert.equal(missingSource.block, true);
+  assert.match(missingSource.reason, /missing source_workspace_id/);
+  assert.equal(entries.length, entryCount, 'failed preflight never records a submission');
+  native.responses.worktree.source.source_workspace_id = 'replacement-source';
+  native.responses.workspace.workspaces[0].workspace_id = 'replacement-source';
+  assert.match((await events.get('tool_call')(event, ctx)).reason, /binding changed since prepare/);
+  assert.equal(entries.length, entryCount);
+  native.responses.worktree.source.source_workspace_id = 'source-workspace';
+  native.responses.workspace.workspaces[0].workspace_id = 'source-workspace';
   assert.equal(await events.get('tool_call')(event, ctx), undefined);
   assert.equal(entries.at(-1).data.kind, 'planning');
+  assert.equal(entries.at(-1).data.manifestSnapshot.exists, false);
   events.get('tool_result')({ ...event, details: { workflow: { id: 'herdr-test', cwd: f.target } } }, ctx);
   assert.equal(entries.at(-1).data.workflowId, 'herdr-test');
   assert.equal((await events.get('tool_call')(event, ctx)).block, true);
@@ -401,17 +517,22 @@ test('native tools save reconciliation and verification through the live extensi
 
 test('native preview and prepare persist across reload, share command behavior, and reject stale input', async t => {
   const f = await fixture(t);
+  const native = await nativeFixture(f, env);
+  const oldConfigDir = process.env.HERDR_PLUGIN_CONFIG_DIR;
+  process.env.HERDR_PLUGIN_CONFIG_DIR = native.env.HERDR_PLUGIN_CONFIG_DIR;
+  t.after(() => { if (oldConfigDir === undefined) delete process.env.HERDR_PLUGIN_CONFIG_DIR; else process.env.HERDR_PLUGIN_CONFIG_DIR = oldConfigDir; });
   const saved = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]));
   Object.assign(process.env, env);
   t.after(() => { for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
   const tools = new Map(), commands = new Map(), entries = [], messages = [], errors = [];
   const api = {
+    exec: native.exec,
     registerCommand: (name, command) => commands.set(name, command),
     registerTool: tool => tools.set(tool.name, tool),
     appendEntry: (customType, data) => entries.push({ type: 'custom', customType, data }),
     sendMessage: (msg, options) => messages.push({ msg, options }),
   };
-  const ctx = { cwd: f.root, sessionManager: { getBranch: () => entries }, ui: { notify: (...args) => errors.push(args) } };
+  const ctx = { cwd: f.root, sessionManager: { getBranch: () => entries, getSessionFile: () => native.sessionFile }, ui: { notify: (...args) => errors.push(args) } };
   adapter(api);
   const params = { filename: path.relative(f.root, f.filename), taskId: f.taskId };
   const execute = (name, args) => tools.get(name).execute('call', args, undefined, undefined, ctx);
@@ -422,6 +543,11 @@ test('native preview and prepare persist across reload, share command behavior, 
   assert.match(result.content[0].text, /Preview only/);
   assert.equal(entries.at(-1).data.kind, 'preview');
   adapter(api); // fresh extension instance reads the existing session branch
+  const previewCount = entries.length;
+  native.responses.agent.agent.agent_session.value = '/wrong/session';
+  await assert.rejects(execute('forgeflow_prepare_lane', params), /Live root session differs/);
+  assert.equal(entries.length, previewCount, 'native prepare failure writes no handoff or submission');
+  native.responses.agent.agent.agent_session.value = native.sessionFile;
   const prepared = await execute('forgeflow_prepare_lane', params);
   assert.equal(prepared.details.kind, 'prepared');
   assert.equal(entries.at(-1).data.kind, 'prepared');

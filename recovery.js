@@ -2,6 +2,7 @@ import { readFile, lstat, realpath } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
+import { readManifestSnapshot, assertSnapshotUnchanged } from './manifest-snapshot.js';
 
 const PRE_PERSISTENCE_REJECTIONS = new Map([
   ['Only the verified controller-mapped root may create or update the parent goal or queue.', 'pre-persistence-root-rejection'],
@@ -76,6 +77,7 @@ export async function recoverSubmission({ filename, taskId, cwd, entries, sessio
   const planning = custom.findLast(entry => entry.data.kind === 'planning' && entry.data.root === root && entry.data.sourcePath === sourcePath && entry.data.taskId === taskId);
   if (!planning) throw new Error('No saved planning attempt for this task in the current session branch');
   const record = planning.data;
+  if (record.sessionFile && record.sessionFile !== sessionFile) throw new Error('Failed attempt belongs to another Pi session');
   if (record.paneId !== env.HERDR_PANE_ID || record.workspaceId !== env.HERDR_WORKSPACE_ID)
     throw new Error('Failed attempt belongs to another pane or workspace');
   const prior = custom.find(entry => entry.data.kind === 'submission-no-effect' && entry.data.toolCallId === record.toolCallId && entry.data.root === root && entry.data.sourcePath === sourcePath && entry.data.taskId === taskId);
@@ -98,6 +100,17 @@ export async function recoverSubmission({ filename, taskId, cwd, entries, sessio
     throw new Error('Missing-source-workspace recovery requires an explicit absolute worktreeCwd in the saved plan');
   const started = Date.parse(planning.timestamp);
   if (!Number.isFinite(started) || !(Date.parse(result.timestamp) >= started)) throw new Error('Saved submission timestamps are invalid');
+  if (record.manifestSnapshot) {
+    const owner = { paneId: record.paneId, workspaceId: record.workspaceId, sessionFile };
+    const { snapshot, manifest } = await readManifestSnapshot(root, owner);
+    assertSnapshotUnchanged(record.manifestSnapshot, snapshot, started, owner);
+    if (manifest?.workflows.some(workflow => workflow.objective === record.planArguments.objective))
+      throw new Error('A matching durable workflow exists; reconcile it instead');
+    return { ...record, kind: 'submission-no-effect', recoveredAt: new Date().toISOString(), sessionFile,
+      evidence: { reason, planningEntryId: planning.id, resultEntryId: result.id,
+        resultSha256: digest(JSON.stringify(result)), manifestPath: snapshot.path,
+        manifestProof: 'saved-pre-submission-snapshot', before: record.manifestSnapshot, after: snapshot } };
+  }
   const manifestPath = path.join(root, '.pi/herdr-orchestrator/manifest.json');
   const before = await lstat(manifestPath);
   if (!before.isFile() || before.isSymbolicLink()) throw new Error('Manifest must be a regular non-symlink file');

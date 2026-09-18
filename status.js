@@ -48,7 +48,7 @@ export async function laneStatus({ filename, cwd, records = [], sessionFile, env
     const candidates = mapped ? workflows.filter(workflow => workflow.id === mapped.workflowId) : workflows.filter(workflow => matchesTask(workflow, task, root));
     const workflow = candidates.length === 1 ? candidates[0] : undefined;
     const binding = workflow?.taskBinding;
-    const owner = binding ? { root, sessionFile: binding.rootSessionPath ?? null, paneId: binding.rootPaneId ?? null, workspaceId: binding.workspaceId ?? null } : mapped || prepared || submitted ? { root, sessionFile: null, paneId: (mapped ?? prepared ?? submitted).paneId ?? null, workspaceId: (mapped ?? prepared ?? submitted).workspaceId ?? null } : null;
+    const owner = binding ? { root, sessionFile: binding.rootSessionPath ?? null, paneId: binding.rootPaneId ?? null, workspaceId: binding.workspaceId ?? null } : mapped || prepared || submitted ? { root, sessionFile: (mapped ?? prepared ?? submitted).sessionFile ?? null, paneId: (mapped ?? prepared ?? submitted).paneId ?? null, workspaceId: (mapped ?? prepared ?? submitted).workspaceId ?? null } : null;
     const receipts = workflow?.lanes?.filter(lane => lane.completionReceipt?.id && lane.completionReceipt?.summary).length ?? 0;
     const complete = Boolean(workflow?.lanes?.length && receipts === workflow.lanes.length);
     const blockers = [];

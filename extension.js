@@ -3,6 +3,9 @@ import { loadPreview, renderPreview } from './planner.js';
 import { prepareLane, revalidate, matchPlan, verifyLane, reconcileLane } from './prepare.js';
 import { laneStatus, renderStatus } from './status.js';
 import { recoverSubmission } from './recovery.js';
+import { nativePreflight } from './preflight.js';
+import { readManifestSnapshot } from './manifest-snapshot.js';
+import { isDeepStrictEqual } from 'node:util';
 
 const ENTRY = 'forgeflow-adapter';
 const message = error => error instanceof Error ? error.message : String(error);
@@ -15,7 +18,7 @@ function splitTask(args) {
   return { filename: match[1].replace(/^"(.*)"$/, '$1'), taskId: match[2] };
 }
 function renderHandoff(prepared) {
-  return `Prepared ${prepared.taskId} at ${prepared.targetHead}.\nRoot must verify Baa-ton readiness and call herdr_plan with these exact arguments. Dispatch remains a separate explicit action.\n\n${JSON.stringify(prepared.planArguments, null, 2)}`;
+  return `Prepared ${prepared.taskId} at ${prepared.targetHead}.\nNative root/session and required source-workspace checks passed and will be rechecked before submission. Baa-ton remains authoritative for authorization and dispatch readiness. Dispatch remains a separate explicit action.\n\n${JSON.stringify(prepared.planArguments, null, 2)}`;
 }
 
 export default function adapter(pi) {
@@ -36,8 +39,11 @@ export default function adapter(pi) {
     const history = records(ctx);
     const previous = history.findLast(item => item.kind === 'preview' && item.sourcePath === filename);
     const prepared = await prepareLane({ filename, taskId: params.taskId, preview: previous, cwd: ctx.cwd, records: history });
-    pi.appendEntry(ENTRY, prepared);
-    return prepared;
+    const sessionFile = ctx.sessionManager.getSessionFile();
+    const nativeReadiness = await nativePreflight({ prepared, sessionFile, exec: pi.exec?.bind(pi), signal: ctx.signal });
+    const record = { ...prepared, sessionFile, nativeReadiness };
+    pi.appendEntry(ENTRY, record);
+    return record;
   }
   async function status(params, ctx) {
     return laneStatus({ filename: path.resolve(ctx.cwd, params.filename), cwd: ctx.cwd, records: records(ctx), sessionFile: ctx.sessionManager.getSessionFile() });
@@ -57,10 +63,10 @@ export default function adapter(pi) {
     return verified;
   }
   for (const definition of [
-    { name: 'forgeflow_recover_submission', label: 'Reconcile rejected submission', fields: ['filename', 'taskId'], run: recover, render: record => `Saved no-durable-effect evidence for ${record.taskId}, attempt ${record.toolCallId}. History retained. Run preview and prepare again after the reported planning prerequisite is repaired.`, description: 'Recover only an exact saved pre-persistence herdr_plan root-authorization or missing-source-workspace rejection in this native Pi session. Requires the matching call/result and either a manifest predating submission or exact pre-submission native workflow observations with only root activity outside workflows; fails closed for ambiguous effects. Appends evidence without deleting history, changing the brief, registering roots, planning or dispatching. Run before root migration or other operations change the manifest.' },
+    { name: 'forgeflow_recover_submission', label: 'Reconcile rejected submission', fields: ['filename', 'taskId'], run: recover, render: record => `Saved no-durable-effect evidence for ${record.taskId}, attempt ${record.toolCallId}. History retained. Run preview and prepare again after the reported planning prerequisite is repaired.`, description: 'Recover only an exact saved pre-persistence herdr_plan root-authorization or missing-source-workspace rejection in this native Pi session. Requires the matching call/result and an unchanged saved pre-submission manifest fingerprint; legacy attempts require an older manifest or exact earlier native workflow observations; fails closed for ambiguous effects. Appends evidence without deleting history, changing the brief, registering roots, planning or dispatching. Run before root migration or other operations change the manifest.' },
     { name: 'forgeflow_status', label: 'Show workflow status', fields: ['filename'], run: status, render: renderStatus, description: 'Read-only status for a brief: current root/session, owning pane/workspace, workflow IDs, durable receipts, saved verification and preparation blockers. Reads only this checkout manifest and current session branch. Does not scan other projects, save records, run tests, prepare or dispatch. Use to detect wrong-root context before acting.' },
     { name: 'forgeflow_plan_lanes', label: 'Preview workflow lanes', fields: ['filename'], run: preview, render: renderPreview, description: 'Preview a structured Forgeflow brief and save its hash in this live Pi session. Returns lane scopes, dependencies, blockers and proposed planning arguments. Does not call Baa-ton, create worktrees, run checks or dispatch. Use this tool before forgeflow_prepare_lane; shell imports do not save session records.' },
-    { name: 'forgeflow_prepare_lane', label: 'Prepare workflow lane', fields: ['filename', 'taskId'], run: prepare, render: renderHandoff, description: 'Validate a previously previewed brief and persist a checked lane handoff in this live Pi session. Requires current Herdr identity, clean committed checkouts, a distinct linked worktree for writers and explicit repository tasks, and verified dependencies integrated in their declared repositories. Returns exact herdr_plan arguments; does not plan or dispatch. Call herdr_plan separately only under existing authorization.' },
+    { name: 'forgeflow_prepare_lane', label: 'Prepare workflow lane', fields: ['filename', 'taskId'], run: prepare, render: renderHandoff, description: 'Validate a previously previewed brief and persist a checked lane handoff in this live Pi session. Requires the uniquely registered Pi root, matching live native session, valid source-workspace inventory for worktree tasks, clean committed checkouts, a distinct linked worktree for writers and explicit repository tasks, and verified dependencies integrated in their declared repositories. Returns exact herdr_plan arguments; does not plan or dispatch. Call herdr_plan separately only under existing authorization.' },
     { name: 'forgeflow_reconcile_lane', label: 'Reconcile workflow mapping', fields: ['filename', 'taskId', 'workflowId'], run: reconcile, description: 'Persist a missing adapter mapping in this live Pi session after validating the durable Baa-ton workflow against the brief and root identity. Use this native tool, not shell imports of prepare.js; shell calls cannot save Pi session records. Does not dispatch or mark verified.' },
     { name: 'forgeflow_verify_lane', label: 'Record root verification', fields: ['workflowId', 'commit', 'evidence'], run: verify, description: 'Persist root verification in this live Pi session after independently checking the lane. Requires a mapped workflow, durable completion receipt, clean lane at the full commit hash, and integration into the declared repository checkout (the root by default). Evidence must describe checks actually rerun and their results. Use this native tool rather than shell imports.' },
   ]) {
@@ -141,8 +147,15 @@ export default function adapter(pi) {
       if (path.resolve(ctx.cwd) !== prepared.root) throw new Error('Root directory changed since prepare');
       if (pending.size) throw new Error('Another prepared plan is in flight; wait for its result');
       pending.set(event.toolCallId, prepared);
-      await revalidate(prepared, history);
-      pi.appendEntry(ENTRY, { ...prepared, kind: 'planning', toolCallId: event.toolCallId });
+      const { nativeReadiness, sessionFile, ...localPrepared } = prepared;
+      await revalidate(localPrepared, history);
+      if (!nativeReadiness) throw new Error('Preparation predates native preflight; prepare the lane again');
+      if (sessionFile !== ctx.sessionManager.getSessionFile()) throw new Error('Root session changed since prepare; resume the owning session');
+      const fresh = await nativePreflight({ prepared, sessionFile, exec: pi.exec?.bind(pi), signal: ctx.signal });
+      if (!isDeepStrictEqual(fresh, nativeReadiness)) throw new Error('Native root or source binding changed since prepare; prepare the lane again');
+      const owner = { paneId: prepared.paneId, workspaceId: prepared.workspaceId, sessionFile };
+      const { snapshot: manifestSnapshot } = await readManifestSnapshot(prepared.root, owner);
+      pi.appendEntry(ENTRY, { ...prepared, kind: 'planning', toolCallId: event.toolCallId, manifestSnapshot });
     } catch (error) { pending.delete(event.toolCallId); return { block: true, reason: message(error) }; }
   });
   pi.on?.('tool_result', (event, ctx) => {
