@@ -30,6 +30,10 @@ from Git and preserve original roots and controller mappings.
 3. Make a new one-task brief with explicit absolute Windows `repoCwd` and
    `worktreeCwd`, a README-only writer scope, and an exact authorized launch profile
    or project `taskProfile`. Do not substitute models or authentication.
+   In the disposable controller only, stage an unrelated instruction edit,
+   make a further unstaged edit, and create an untracked journal. Record their
+   contents and index diff. Keep the application and writer clean; do not commit
+   these controller edits. This exercises the shared-controller requirement.
 4. Call native `forgeflow_plan_lanes`. Then call `forgeflow_prepare_lane` with
    `createSourceWorkspace: false`. Expect missing `source_workspace_id`, no saved
    preparation, and no workspace creation.
@@ -42,12 +46,15 @@ from Git and preserve original roots and controller mappings.
    is unchanged and the audit still has one creation attempt. Root cwd and HEADs
    remain unchanged; no manual native setup was required.
 7. Submit the exact prepared arguments through native `herdr_plan`. This must
+   tolerate a further unrelated controller journal edit made after preparation.
+   It must
    pass Forge's submission recheck and Baa-ton's real source-workspace validation.
    Record the resulting workflow/task mapping, native repository-parent binding,
    and the saved pre-submission manifest fingerprint. A simulated tool result or
    preview/prepare alone does not pass this step.
-8. Stop after planning. Independently check unchanged Git HEADs and clean
-   checkouts, no dispatch/receipt, and preservation of historical root mappings.
+8. Stop after planning. Independently check unchanged Git HEADs, clean application
+   and writer checkouts, preserved controller edits/index, no dispatch/receipt,
+   and preservation of historical root mappings.
    Report workspace/workflow IDs and any unresolved checks. Do not delete the
    source workspace, close resources, or edit audit records.
 
@@ -64,8 +71,9 @@ absence after an unresolved request requires investigation.
 - One automatic source creation and reuse on a repeated preparation.
 - An actual successful native `herdr_plan` with matching source binding and Forge
   mapping, including manifest snapshot evidence.
-- No second root, model substitution, manual source-workspace setup, dispatch,
-  Git changes, or historical mapping edits.
+- Preserved staged/unstaged/untracked controller edits across preparation and
+  native planning; no adapter-written Git changes or historical mapping edits.
+- No second root, model substitution, manual source-workspace setup or dispatch.
 
 Record a qualified result only after the owning root has independently checked
 these facts. This document does not claim the trial has run.

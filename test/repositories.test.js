@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, realpath, rm, symlink } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
@@ -17,7 +17,7 @@ async function repo(cwd, content) {
   git(cwd, 'add', 'source.txt'); git(cwd, 'commit', '-m', 'base');
 }
 async function fixture(t) {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'multi repo '));
+  const dir = await realpath(await mkdtemp(path.join(os.tmpdir(), 'multi repo ')));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const cwd = path.join(dir, 'workspace'); await repo(cwd, 'controller');
   await writeFile(path.join(cwd, '.git/info/exclude'), 'apps/\n.forgeflow/\n.pi/\n');
@@ -80,6 +80,7 @@ async function complete(f, prepared) {
 
 test('verification integrates into the application checkout and cross-repo dependencies use its evidence', async t => {
   const f = await fixture(t); f.brief.tasks[1].dependsOn = ['a']; f.preview = await f.save();
+  await writeFile(path.join(f.cwd, 'source.txt'), 'unrelated controller edit');
   const prepared = await prepareLane({ ...f, taskId: 'a' });
   const done = await complete(f, prepared);
   const options = { mapped: done.mapped, cwd: f.cwd, commit: done.commit, evidence: 'Independently inspected change' };
@@ -96,6 +97,7 @@ test('verification integrates into the application checkout and cross-repo depen
 
 test('reconciliation separates controller session identity from native repository workspace ownership', async t => {
   const f = await fixture(t), prepared = await prepareLane({ ...f, taskId: 'a' });
+  await writeFile(path.join(f.cwd, 'journal.txt'), 'unrelated controller journal');
   const done = await complete(f, prepared);
   const options = { ...f, taskId: 'a', workflowId: done.mapped.workflowId, sessionFile: '/session' };
   const mapped = await reconcileLane(options); assert.equal(mapped.repository.root, f.a);
@@ -104,6 +106,44 @@ test('reconciliation separates controller session identity from native repositor
   done.flow.taskBinding.rootPaneId = env.HERDR_PANE_ID;
   done.flow.worktreeBinding.repoParent.checkoutPath = f.b; await done.save();
   await assert.rejects(reconcileLane(options), /different repository/);
+});
+
+test('explicit repoCwd tolerates staged, unstaged and untracked controller edits without changing them', async t => {
+  const f = await fixture(t);
+  await writeFile(path.join(f.cwd, 'source.txt'), 'staged controller instruction');
+  git(f.cwd, 'add', 'source.txt');
+  await writeFile(path.join(f.cwd, 'source.txt'), 'later controller instruction');
+  await writeFile(path.join(f.cwd, 'journal.txt'), 'local journal');
+  const before = git(f.cwd, 'diff', '--cached');
+  const prepared = await prepareLane({ ...f, taskId: 'a' });
+  await writeFile(path.join(f.cwd, 'journal.txt'), 'concurrent journal update');
+  await revalidate(prepared, [], env);
+  assert.equal(git(f.cwd, 'diff', '--cached'), before);
+  assert.equal(await readFile(path.join(f.cwd, 'source.txt'), 'utf8'), 'later controller instruction');
+  assert.equal(await readFile(path.join(f.cwd, 'journal.txt'), 'utf8'), 'concurrent journal update');
+  for (const dir of [f.a, f.wa]) {
+    await writeFile(path.join(dir, 'unexpected.txt'), 'dirty');
+    await assert.rejects(prepareLane({ ...f, taskId: 'a' }), /dirty/);
+    await assert.rejects(revalidate(prepared, [], env), /dirty/);
+    await rm(path.join(dir, 'unexpected.txt'));
+  }
+  git(f.cwd, 'commit', '-m', 'other agent committed controller instructions');
+  await assert.rejects(revalidate(prepared, [], env), /changed since prepare/);
+});
+
+test('implicit controller repositories and explicit aliases of the controller still require cleanliness', async t => {
+  const f = await fixture(t);
+  f.brief.tasks = [{ ...f.brief.tasks[0], readOnly: true }];
+  delete f.brief.tasks[0].repoCwd; delete f.brief.tasks[0].worktreeCwd;
+  f.preview = await f.save();
+  await writeFile(path.join(f.cwd, 'source.txt'), 'dirty');
+  await assert.rejects(prepareLane({ ...f, taskId: 'a' }), /dirty/);
+  const alias = path.join(path.dirname(f.cwd), 'controller-alias');
+  await symlink(f.cwd, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  const worker = path.join(path.dirname(f.cwd), 'controller-worker');
+  git(f.cwd, 'worktree', 'add', '-b', 'controller-worker', worker);
+  f.brief.tasks[0].repoCwd = alias; f.brief.tasks[0].worktreeCwd = worker; f.preview = await f.save();
+  await assert.rejects(prepareLane({ ...f, taskId: 'a' }), /dirty/);
 });
 
 test('same-repository dependencies still require integration into the dependent worktree', async t => {
