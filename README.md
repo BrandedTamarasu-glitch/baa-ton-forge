@@ -400,6 +400,7 @@ The adapter exposes these native model-callable tools:
 | Tool | Arguments | Result |
 | --- | --- | --- |
 | `forgeflow_status` | `filename` | Read-only task, workflow, verification and owning-root snapshot |
+| `forgeflow_diagnose_lane` | `filename`, `taskId`, optional `inspectNative` | Explain selected workflow evidence and a supported next step; explicit live inspection is read-only |
 | `forgeflow_continue` | `filename` | Preview one next root step, required checks and stop reason; no execution |
 | `forgeflow_check_readiness` | `filename` | Read-only local/native prerequisite checks; no repair or dispatch |
 | `forgeflow_verification_guidance` | `filename`, `taskId` | Read-only completion prerequisites and required validation; no verification saved |
@@ -570,6 +571,8 @@ other tools during the handoff, and repeated attempts. It records the native
 result as dispatch-reported, cancelled, approval-required, error or unknown;
 none means completion or verification. Further tools are blocked for that turn,
 and no next lane, integration or cleanup is authorized.
+
+See [guided workflow diagnosis](docs/workflow-diagnosis.md) for a selected task report and explicit read-only live inspection.
 
 Use `/forgeflow-dispatch-audit` to inspect the latest intent, attempt and result
 in the current session branch without starting a model turn. Resume the owning
