@@ -65,8 +65,10 @@ allowed. Changed HEADs or configured profiles require another setup preview.
 Attempts are recorded under the repository's common Git directory in
 `forgeflow-task-setup/<task-name>.json`. An interrupted attempt preserves its
 resources and blocks retry for inspection; no automatic rollback or cleanup is
-performed. Setup drafts belong to the originating Pi session. The new setup
-flow has automated Git/native-fixture coverage; it has not yet been live-qualified.
+performed. Setup drafts belong to the originating Pi session. The setup flow has
+automated Git/native-fixture coverage and a passing
+[native Linux trial through planning](docs/linux-guided-setup-trial.md).
+Dispatch, completion and Windows guided setup are not qualified by that trial.
 Use the [native guided setup trial](docs/guided-setup-trial.md) and its disposable
 fixture generator to qualify setup through actual native planning.
 

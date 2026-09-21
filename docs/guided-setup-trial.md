@@ -1,6 +1,7 @@
 # Native guided task setup trial
 
-Status: procedure and fixture generator prepared; no live result recorded.
+Status: [native Linux setup through planning passed](linux-guided-setup-trial.md)
+on September 21, 2026. Dispatch and Windows guided setup remain unqualified.
 Automated tests use real Git and a fixture Herdr transport. This procedure
 qualifies the new setup flow through native planning, separately from issue #5.
 
