@@ -9,7 +9,7 @@ import { sameSessionPath } from './session-path.js';
 
 const exec = promisify(execFile);
 async function git(cwd, ...args) {
-  return (await exec('git', ['-C', cwd, ...args], { maxBuffer: 1024 * 1024 })).stdout.trim();
+  return (await exec('git', ['--no-optional-locks', '-C', cwd, ...args], { maxBuffer: 1024 * 1024 })).stdout.trim();
 }
 export async function checkout(cwd, { requireClean = true } = {}) {
   const canonical = await realpath(cwd);

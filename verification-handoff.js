@@ -15,11 +15,12 @@ function requirements(report) {
     ...report.requiredChecks.map((instruction, i) => ({ id: `check-${i + 1}`, instruction })),
     ...report.acceptance.map((instruction, i) => ({ id: `acceptance-${i + 1}`, instruction }))];
 }
-function fingerprint(report) {
+export function verificationFingerprint(report) {
   return hash({ current: report.current, sourcePath: report.sourcePath, sourceSha256: report.sourceSha256,
     manifestPath: report.manifestPath, taskId: report.taskId, workflowId: report.workflowId,
     evidence: report.evidence, requirements: requirements(report) });
 }
+const fingerprint = verificationFingerprint;
 function ready(report) {
   if (report.state !== 'awaiting-independent-validation' || !report.evidence?.commit)
     throw new Error(`Verification prerequisites blocked: ${report.blockers.join('; ')}`);
@@ -85,17 +86,39 @@ export function renderVerificationDraft(draft) {
   ].join('\n\n');
 }
 
+// An accepted validation draft is evidence for a merge proposal, never final verification.
+export function integrationValidation(report, records, entries) {
+  const approvals = records.filter(item => item.kind === 'integration-validation' &&
+    item.workflowId === report.workflowId && item.commit === report.evidence?.commit && item.fingerprint === fingerprint(report));
+  const accepted = approvals.at(-1);
+  if (!accepted) throw new Error('Accept a current pre-integration validation draft before requesting integration.');
+  const intents = records.filter(item => item.kind === 'verification-handoff' && item.handoffId === accepted.handoffId);
+  const drafts = records.filter(item => item.kind === 'verification-draft' && item.draftId === accepted.draftId && item.handoffId === accepted.handoffId);
+  if (intents.length !== 1 || drafts.length !== 1 || !intents[0].beforeIntegration ||
+      intents[0].fingerprint !== fingerprint(report) || drafts[0].fingerprint !== fingerprint(report) ||
+      records.some(item => item.kind === 'verification-cancelled' && item.handoffId === accepted.handoffId) ||
+      !records.some(item => item.kind === 'verification-review-decision' && item.handoffId === accepted.handoffId &&
+        item.draftId === accepted.draftId && item.decision === 'confirmed'))
+    throw new Error('Pre-integration validation provenance is missing or conflicting.');
+  const evidence = collectVerificationEvidence(intents[0], records, entries);
+  if (hash(evidence) !== hash(drafts[0].evidence) ||
+      !buildVerificationDraft({ ...intents[0], requirements: requirements(report) }, drafts[0].assessments.map(item =>
+        ({ requirementId: item.id, outcome: item.outcome, summary: item.summary, toolCallIds: item.toolCallIds })), evidence).eligible)
+    throw new Error('Pre-integration validation evidence is failed, stale or unavailable.');
+  return { handoffId: accepted.handoffId, draftId: accepted.draftId, commit: accepted.commit };
+}
+
 export function registerVerificationHandoff(pi, records, saveVerification, inspect = verificationGuidance) {
   let busy = false, armed = null;
   const append = record => pi.appendEntry(ENTRY, { ...record, recordedAt: new Date().toISOString() });
   const latest = ctx => records(ctx).findLast(item => item.kind === 'verification-handoff');
   const children = (ctx, intent) => records(ctx).filter(item => item.handoffId === intent.handoffId);
-  const closed = (ctx, intent) => children(ctx, intent).some(item => ['verification-cancelled', 'verified'].includes(item.kind));
+  const closed = (ctx, intent) => children(ctx, intent).some(item => ['verification-cancelled', 'verified', 'integration-validation'].includes(item.kind));
   const active = ctx => { const intent = latest(ctx); return intent && !closed(ctx, intent) ? intent : null; };
-  const inspectHere = (filename, taskId, ctx) => inspect({ filename, taskId, cwd: ctx.cwd,
+  const inspectHere = (filename, taskId, ctx, beforeIntegration = false) => inspect({ filename, taskId, beforeIntegration, cwd: ctx.cwd,
     records: records(ctx), sessionFile: ctx.sessionManager.getSessionFile() });
   const fresh = async (intent, ctx) => {
-    const report = await inspectHere(intent.sourcePath, intent.taskId, ctx); ready(report);
+    const report = await inspectHere(intent.sourcePath, intent.taskId, ctx, intent.beforeIntegration === true); ready(report);
     if (fingerprint(report) !== intent.fingerprint) throw new Error('Root/session, brief, manifest path, checkout or requirements changed; cancel this handoff and inspect before starting another');
     return report;
   };
@@ -119,12 +142,13 @@ export function registerVerificationHandoff(pi, records, saveVerification, inspe
         if (active(ctx)) throw new Error('A verification handoff is open; review its draft or cancel it before starting another');
         if (records(ctx).some(item => item.kind === 'dispatch-intent' && !records(ctx).some(result => result.kind === 'dispatch-result' && result.intentId === item.intentId)))
           throw new Error('An unresolved dispatch handoff exists; inspect it before validation');
-        const match = args.trim().match(/^(.*?)\s+([a-z][a-z0-9-]*)$/);
-        if (!match) throw new Error('Usage: /forgeflow-verification-handoff "path/to/brief.json" task-id');
-        const report = await inspectHere(path.resolve(ctx.cwd, match[1].replace(/^"(.*)"$/, '$1')), match[2], ctx); ready(report);
+        const match = args.trim().match(/^(?:"([^"\r\n]+)"|([^"\s]+))\s+([a-z][a-z0-9-]*)(?:\s+(--before-integration))?$/);
+        if (!match || /[\r\n]/.test(args)) throw new Error('Usage: /forgeflow-verification-handoff "path/to/brief.json" task-id [--before-integration]');
+        const report = await inspectHere(path.resolve(ctx.cwd, match[1] ?? match[2]), match[3], ctx, Boolean(match[4])); ready(report);
         const intent = { kind: 'verification-handoff', handoffId: randomUUID(), sourcePath: report.sourcePath,
           sourceSha256: report.sourceSha256, taskId: report.taskId, workflowId: report.workflowId,
           current: report.current, commit: report.evidence.commit, checkouts: report.evidence,
+          ...(match[4] ? { beforeIntegration: true } : {}),
           fingerprint: fingerprint(report), requirements: requirements(report) };
         append(intent); armed = intent.handoffId;
         pi.sendMessage({ customType: 'forgeflow-verification-handoff', display: true, details: intent,
@@ -182,11 +206,18 @@ export function registerVerificationHandoff(pi, records, saveVerification, inspe
         const rendered = renderVerificationDraft(draft);
         pi.sendMessage({ customType: 'forgeflow-verification-review', display: true, content: rendered, details: draft }, { triggerTurn: false });
         if (!draft.eligible) throw new Error('Draft contains failed or blocked validation; inspect the evidence. No verification saved.');
-        const confirmed = await ctx.ui.confirm('Save root verification?', `${rendered}\n\nConfirm the root assessments accurately reflect these outputs and the acceptance criteria. Save verification for this exact workflow/commit? This does not authorize any next lane or cleanup.`);
+        const confirmed = await ctx.ui.confirm(intent.beforeIntegration ? 'Accept pre-integration validation?' : 'Save root verification?', `${rendered}\n\nConfirm the root assessments accurately reflect these outputs and the acceptance criteria. ${intent.beforeIntegration ? 'Accept validation for this exact commit before integration? This is not final verification and does not execute a merge.' : 'Save verification for this exact workflow/commit?'} This does not authorize any next lane or cleanup.`);
         append({ kind: 'verification-review-decision', handoffId: intent.handoffId, draftId: draft.draftId, decision: confirmed ? 'confirmed' : 'declined' });
         if (!confirmed) return;
         await fresh(intent, ctx);
         if (hash(collect(intent, ctx)) !== hash(draft.evidence)) throw new Error('Native validation evidence changed during review');
+        if (intent.beforeIntegration) {
+          append({ kind: 'integration-validation', handoffId: intent.handoffId, draftId: draft.draftId,
+            workflowId: intent.workflowId, commit: intent.commit, fingerprint: intent.fingerprint });
+          armed = null;
+          ctx.ui.notify('Pre-integration validation accepted. Preview integration next; final verification remains unsaved.', 'info');
+          return;
+        }
         append({ kind: 'verification-save-attempt', handoffId: intent.handoffId, draftId: draft.draftId });
         await saveVerification({ workflowId: intent.workflowId, commit: intent.commit,
           evidence: `User-reviewed root validation draft ${draft.draftId}.\n${rendered}` }, ctx,

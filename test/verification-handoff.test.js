@@ -66,6 +66,24 @@ test('handoff collects actual root results, drafts, and saves only after user re
   await f.review(); assert.equal(f.saves.length, 1);
 });
 
+test('pre-integration validation closes its handoff without saving final verification', async () => {
+  const f = fixture(), inspected = [];
+  f.report.evidence.integrated = false;
+  f.install(undefined, async options => { inspected.push(options.beforeIntegration); return structuredClone(f.report); });
+  await f.commands.get('forgeflow-verification-handoff').handler('"brief.json" writer --before-integration', f.ctx);
+  assert.equal(f.intent().beforeIntegration, true);
+  await f.call(); await f.draft();
+  f.approve = false; await f.review();
+  assert.equal(f.records().some(item => item.kind === 'integration-validation'), false);
+  f.approve = true; await f.review();
+  assert.equal(f.records().at(-1).kind, 'integration-validation');
+  assert.equal(f.saves.length, 0);
+  assert.equal(f.records().some(item => item.kind === 'verified'), false);
+  assert.ok(inspected.every(value => value === true));
+  assert.equal(await f.hooks.get('tool_call')({ toolName: 'forgeflow_integration_preview' }, f.ctx), undefined);
+  await f.review(); assert.equal(f.records().filter(item => item.kind === 'integration-validation').length, 1);
+});
+
 test('blocked prerequisites, unavailable UI and outstanding dispatch create no validation turn', async () => {
   for (const alter of [f => { f.report.state = 'blocked'; f.report.blockers = ['Uncommitted change']; },
     f => { f.ctx.hasUI = false; }, f => { f.ctx.isIdle = () => false; }, f => { f.pi.getActiveTools = () => []; },

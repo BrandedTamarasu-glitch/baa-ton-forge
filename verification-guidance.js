@@ -58,7 +58,7 @@ export async function verificationGuidance(options) {
       baseline: mapped.targetHead ?? null, committedPaths: null, scope: 'not-checked' };
     if (target.status) report.blockers.push('Lane has uncommitted or untracked changes. HEAD does not include all working-tree results; inspect before an authorized commit.');
     if (repository.status) report.blockers.push('Application integration checkout is dirty; preserve its changes and resolve ownership before integration.');
-    if (!integrated) report.blockers.push('Lane HEAD is not integrated into the application checkout. Inspect the diff and authorization before integration.');
+    if (!integrated && options.beforeIntegration !== true) report.blockers.push('Lane HEAD is not integrated into the application checkout. Inspect the diff and authorization before integration.');
     if (!/^[0-9a-f]{40,64}$/.test(mapped.targetHead ?? '')) {
       report.blockers.push('Original lane baseline is unavailable; independently establish scope provenance. Do not invent a baseline.');
     } else if (!await isAncestor(target.root, mapped.targetHead, target.head)) {
