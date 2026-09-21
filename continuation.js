@@ -44,6 +44,7 @@ export function renderContinuation(report) {
       `Workflow: ${step.workflowId ?? 'unmapped'}`,
       `Owner session: ${step.owner?.sessionFile ?? 'not established'}`,
       ...step.requiredChecks.map(check => `Required: ${check}`),
+      ...(step.suggestedTool === 'forgeflow_diagnose_lane' ? [`Read-only diagnosis tool: forgeflow_diagnose_lane ${JSON.stringify({ filename: report.sourcePath, taskId: step.taskId })}`] : []),
     ] : ['Proposed next: none']),
     `Stop: ${report.stopReason}`,
     ...report.tasks.flatMap(task => [

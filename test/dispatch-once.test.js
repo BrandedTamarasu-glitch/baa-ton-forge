@@ -151,3 +151,14 @@ test('multiline pasted commentary is rejected before inspection', async () => {
   assert.equal(f.probes, 0); assert.equal(f.records.length, 0);
   assert.match(f.notices.at(-1)[0], /one line/);
 });
+
+test('explicit audit selects the requested workflow instead of the newest intent', async () => {
+  const f = fixture(); await f.start(); await f.call(); f.result({}, true);
+  f.records.push({ ...f.records[0], intentId: 'unrelated', workflowId: 'herdr-newer' });
+  const before = structuredClone(f.records);
+  await f.commands.get('forgeflow-dispatch-audit').handler('herdr-one', f.ctx);
+  assert.equal(f.messages.at(-1)[0].details.workflowId, 'herdr-one');
+  assert.equal(f.messages.at(-1)[0].details.audit.length, 3);
+  assert.equal(f.messages.at(-1)[1].triggerTurn, false);
+  assert.deepEqual(f.records, before);
+});

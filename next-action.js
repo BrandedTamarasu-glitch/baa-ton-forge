@@ -42,12 +42,12 @@ export function nextAction(task, facts, tasks) {
   if (workflow) {
     if ((workflow.retry && workflow.retry.state !== 'dispatching') || !['planned', 'starting', 'running', 'working', 'dispatched'].includes(workflow.status))
       return action('inspect-workflow', 'blocked', 'Inspect the existing workflow',
-        `Saved status is ${workflow.status ?? 'unknown'}${workflow.retry?.failedStage ? `; failure stage: ${workflow.retry.failedStage}` : ''}. ${workflow.retry?.error ?? 'Completion has not been proved by all required receipts.'} No replacement or automatic retry is recommended.`, 'herdr_observe');
+        `Saved status is ${workflow.status ?? 'unknown'}${workflow.retry?.failedStage ? `; failure stage: ${workflow.retry.failedStage}` : ''}. ${workflow.retry?.error ?? 'Completion has not been proved by all required receipts.'} No replacement or automatic retry is recommended.`, 'forgeflow_diagnose_lane');
     if (workflow.status === 'planned') {
       if (task.completionReceipts || workflow.retry || workflow.dispatchedAt || workflow.lanes.some(lane =>
         lane.agentStartAttemptedAt || lane.promptAttemptedAt || lane.promptedAt || lane.paneId || lane.startupIntentPath))
         return action('inspect-workflow', 'blocked', 'Inspect existing startup effects',
-          'The workflow says planned but contains execution evidence. Inspect that attempt before considering dispatch.', 'herdr_observe');
+          'The workflow says planned but contains execution evidence. Inspect that attempt before considering dispatch.', 'forgeflow_diagnose_lane');
       const unresolved = unresolvedDependencies(task, tasks);
       if (unresolved.length) return waitForDependencies(unresolved);
       return action('review-dispatch', 'ready-for-root', 'Check authorization and readiness before dispatch',

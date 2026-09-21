@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { checkContinuation } from './continuation-readiness.js';
 import { nativeSessionOptions } from './native-pi-identity.js';
 import { checkStartupRetry } from './dispatch-retry.js';
+import { selectDispatchAudit } from './dispatch-audit.js';
 
 const ENTRY = 'forgeflow-adapter';
 const message = error => error instanceof Error ? error.message : String(error);
@@ -31,12 +32,16 @@ export function registerDispatchOnce(pi, records, inspect = checkContinuation, i
 
   pi.registerCommand('forgeflow-dispatch-audit', {
     description: 'Show single-dispatch audit in this session; no execution or recovery',
-    handler: async (_args, ctx) => {
-      const intent = latest(ctx);
-      const audit = intent ? children(ctx, intent) : [];
+    handler: async (args, ctx) => {
+      const workflowId = args.trim() || null;
+      if (workflowId && !/^[a-zA-Z0-9_-]+$/.test(workflowId)) {
+        ctx.ui.notify('Usage: /forgeflow-dispatch-audit [workflow-id] (one line)', 'error'); return;
+      }
+      const selected = selectDispatchAudit(records(ctx), workflowId);
+      const audit = selected.audit;
       pi.sendMessage({ customType: 'forgeflow-dispatch-audit', display: true,
-        content: intent ? `Latest single-dispatch audit (current session branch only):\n${JSON.stringify(audit, null, 2)}\nA missing result is unresolved, not proof of no effect. No retry is authorized.` : 'No single-dispatch audit in this session branch. This does not prove a workflow was never dispatched.',
-        details: { audit } }, { triggerTurn: false });
+        content: audit.length ? `${workflowId ? `Selected workflow ${workflowId}` : 'Latest single-dispatch'} audit (current session branch only):\n${JSON.stringify(audit, null, 2)}\n${selected.conflicts.join('\n')}\nA missing result is unresolved, not proof of no effect. No retry is authorized.` : 'No matching single-dispatch audit in this session branch. This does not prove a workflow was never dispatched.',
+        details: { audit, workflowId: selected.workflowId, conflicts: selected.conflicts } }, { triggerTurn: false });
     },
   });
 

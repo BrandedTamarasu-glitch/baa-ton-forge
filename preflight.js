@@ -36,7 +36,7 @@ export async function nativePreflight(options) {
   });
 }
 
-async function probe({ prepared, sessionFile, sessionId, proveSession, exec, env = process.env, signal }) {
+export async function inspectNativeRoot({ prepared, sessionFile, sessionId, proveSession, exec, env = process.env, signal }) {
   const pane = identity(env);
   if (!sessionFile || !path.isAbsolute(sessionFile)) throw new Error('Native Pi session identity is unavailable; resume the owning session before preparing');
   if (typeof exec !== 'function') throw new Error('Native Herdr inspection is unavailable; load this adapter in Pi before preparing');
@@ -63,6 +63,12 @@ async function probe({ prepared, sessionFile, sessionId, proveSession, exec, env
   } else await assertLiveSession(agent.agent_session, sessionFile, env);
   const readiness = { version: 1, root: { registrationId: mapping.id, configPath, manifestPath, target: root.target, targetKind: root.target_kind,
     ...pane, sessionFile, checkout: prepared.root, ...(sessionIdentity ? { sessionIdentity } : {}) }, source: null };
+  return { readiness, inspect };
+}
+
+async function probe(options) {
+  const { prepared } = options;
+  const { readiness, inspect } = await inspectNativeRoot(options);
   if (!prepared.planArguments.worktreeCwd) return { readiness };
   const inventory = await inspect(['worktree', 'list', '--cwd', prepared.target]);
   const source = inventory.source;
