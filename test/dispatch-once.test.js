@@ -18,7 +18,12 @@ function fixture() {
     appendEntry: (_type, data) => records.push(data), sendMessage: (...args) => messages.push(args),
     getActiveTools: () => available ? ['herdr_dispatch'] : [] };
   const inspect = async () => { probes++; return structuredClone(report); };
-  const install = () => registerDispatchOnce(pi, () => records, inspect);
+  const retryInspect = async ({ previous }) => {
+    if (!records.some(item => item.kind === 'dispatch-result' && item.intentId === previous.intentId && item.outcome === 'error')) throw new Error('Not a known failed startup');
+    probes++;
+    return { ...structuredClone(report), mode: 'startup-retry', proposedStep: { ...report.proposedStep, code: 'review-startup-retry' } };
+  };
+  const install = () => registerDispatchOnce(pi, () => records, inspect, retryInspect);
   install();
   return { pi, records, commands, hooks, messages, notices, report, ctx, install,
     get probes() { return probes; }, set approve(value) { approve = value; }, set available(value) { available = value; },
@@ -119,4 +124,30 @@ test('reload does not replay a queued intent even before its first tool call', a
   const f = fixture(); await f.start(); f.install();
   assert.equal((await f.call()).block, true);
   assert.equal(f.records.length, 1);
+});
+
+test('explicit startup retry requires fresh confirmation and permits one linked native attempt', async () => {
+  const f = fixture(); await f.start(); await f.call(); f.result({}, true); f.hooks.get('agent_end')();
+  assert.equal((await f.call()).block, true);
+  f.approve = false;
+  await f.commands.get('forgeflow-retry-startup').handler('"brief.json"', f.ctx);
+  assert.equal(f.records.filter(item => item.kind === 'dispatch-intent').length, 1);
+  f.approve = true;
+  await f.commands.get('forgeflow-retry-startup').handler('"brief.json"', f.ctx);
+  const intent = f.records.at(-1);
+  assert.equal(intent.retryOf, f.records[0].intentId);
+  assert.equal(intent.retryMode, 'unprompted-claude-startup');
+  assert.equal(await f.call(undefined, 'retry-call'), undefined);
+  assert.equal((await f.call(undefined, 'retry-again')).block, true);
+  f.hooks.get('tool_result')({ toolName: 'herdr_dispatch', toolCallId: 'retry-call', details: { workflow: { id: 'herdr-one' }, dispatched: true } }, f.ctx);
+  f.hooks.get('agent_end')();
+  assert.equal((await f.call()).block, true);
+  assert.equal(f.records.filter(item => item.kind === 'dispatch-result').length, 2);
+});
+
+test('multiline pasted commentary is rejected before inspection', async () => {
+  const f = fixture();
+  await f.commands.get('forgeflow-dispatch-once').handler('"brief.json"\nPlease observe afterward.', f.ctx);
+  assert.equal(f.probes, 0); assert.equal(f.records.length, 0);
+  assert.match(f.notices.at(-1)[0], /one line/);
 });

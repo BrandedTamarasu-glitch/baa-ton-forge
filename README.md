@@ -575,9 +575,32 @@ Use `/forgeflow-dispatch-audit` to inspect the latest intent, attempt and result
 in the current session branch without starting a model turn. Resume the owning
 session to retain these guards. A crash, missing result, failed readiness check
 or send failure remains unresolved and is not automatically retried or reset.
-Inspect native durable state before recovery; this version deliberately provides
-no retry/recovery command. These are orchestration guards, not a filesystem or
+Inspect native durable state before recovery. These are orchestration guards, not a filesystem or
 process sandbox. Independent completion verification remains a later root step.
+
+For the narrow case where a single Claude child started but Herdr returned
+`agent_not_ready` **before any task prompt attempt**, an explicit recovery
+handoff is available:
+
+```text
+/forgeflow-retry-startup "/absolute/path/to/brief.md"
+```
+
+Paste only the command line; send follow-up instructions separately. This command
+requires the original owning session, an audited native error result, an
+unchanged clean checkout and profile, the existing workflow/source binding, and
+the same idle/ready Claude child with matching original startup attestation.
+It never answers trust dialogs, changes a profile, restarts a child, or clears
+the prior attempt. Native Baa-ton must independently requalify and reuse that
+child before sending the task. Other failures, missing results, prompt attempts,
+receipts, changed session/ownership or incomplete proof remain blocked.
+
+The confirmation shows the original attempt, workflow, profile and existing
+child. Approval allows one exact native dispatch call and a model handoff turn,
+with fresh checks before confirmation, after it and before the call. A new
+intent links to the old one through `retryOf`; both attempts remain in history.
+Cancellation and reloading do not authorize a retry. This recovery path has
+automated coverage; native qualification is still pending.
 
 The [Linux live trial](docs/linux-nested-repository-trial.md#single-dispatch-and-independent-verification)
 exercised confirmation, one native dispatch, audit recording, receipt delivery,

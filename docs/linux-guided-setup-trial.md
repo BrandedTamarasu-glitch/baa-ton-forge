@@ -68,3 +68,20 @@ Those remain separate from this result. Continue with the existing mapped
 writer under separate dispatch authorization; do not recreate or replan it.
 
 See the [repeatable trial procedure](guided-setup-trial.md).
+
+## Subsequent writer startup attempt
+
+A separately authorized dispatch on September 21 reached child creation and
+Claude startup in `w18:p7` (`child-d38f21e7-1`) but failed at `agent-start` with
+native `agent_not_ready`. Forge recorded intent
+`4b34683c-a839-45ef-b5ad-9ca856a35012` and its error result. Native observation
+subsequently reported the same Claude child idle and interactively ready,
+displaying Sonnet 5 with high effort. The durable workflow remained
+`dispatch-failed`, with no task prompt attempt or completion receipt.
+
+Local checks confirmed all three checkouts still clean at the baseline and the
+writer baseline checker passing. A later dispatch request was correctly blocked
+by the consumed one-shot guard; it did not launch another child. This exposed
+the need for an explicit, audited recovery handoff for the existing unprompted
+child. The new `/forgeflow-retry-startup` command implements that narrow case;
+its live execution and writer completion have not yet been demonstrated.
