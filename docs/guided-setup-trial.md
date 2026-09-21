@@ -44,6 +44,11 @@ workspace and one native writer plan; it does not cover dispatch or cleanup.
    label or shell cwd does not change its registration. Stop on a foreign-project
    mapping; `/reload` cannot repair it. Keep the exact diagnostic and actual
    pane/workspace/session in the result sheet.
+   A warning is not automatically a blocker: `ok: true` with "Current root
+   identity matches" can include stale unrelated-root warnings and missing
+   historical lane panes with durable completion receipts. Record those warnings
+   and proceed when they do not concern this trial's root or active resources.
+   Stop for current-root identity failures or unresolved trial-relevant checks.
    Run version diagnostics separately. Baa-ton permits standalone `pi --version`
    but rejects it inside a compound shell command as a possible agent launch.
    Do not combine it with Git checks or bypass the guard with a wrapper.
