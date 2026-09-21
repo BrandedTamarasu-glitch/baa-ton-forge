@@ -26,10 +26,10 @@ async function fixture(t) {
   const preview = await loadPreview(filename, { cwd: root });
   const prepared = await prepareLane({ filename, taskId: 'writer', cwd: root, env: native.env, preview });
   const readiness = await nativePreflight({ prepared, sessionFile: native.sessionFile, env: native.env, exec: native.exec });
-  const dir = path.join(root, '.pi/herdr-orchestrator'); await mkdir(dir, { recursive: true });
+  const dir = path.join(prepared.root, '.pi/herdr-orchestrator'); await mkdir(dir, { recursive: true });
   const startup = path.join(dir, 'herdr-one-lane-1-startup.json');
   const lane = { ...prepared.planArguments.lanes[0], id: 'lane-1', status: 'idle', agentStartAttemptedAt: 'time', paneId: 'child', tabId: 'tab', agentName: 'worker', incarnationId: 'incarnation', startupNonce: 'nonce', startupIntentPath: startup, agentSessionPath: 'child-session', dependencies: [] };
-  const flow = { id: 'herdr-one', status: 'dispatch-failed', cwd: target, objective: prepared.planArguments.objective, lanes: [lane],
+  const flow = { id: 'herdr-one', status: 'dispatch-failed', cwd: prepared.target, objective: prepared.planArguments.objective, lanes: [lane],
     retry: { state: 'retryable', failedStage: 'agent-start', error: 'agent_not_ready', attempt: 1 },
     taskBinding: { rootPaneId: 'p1', workspaceId: 'w1', rootSessionPath: native.sessionFile },
     worktreeBinding: { repoParent: { workspaceId: 'source-workspace', checkoutPath: root } },
