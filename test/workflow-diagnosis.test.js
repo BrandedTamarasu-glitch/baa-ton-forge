@@ -217,6 +217,8 @@ test('partial inspection preserves observed facts and labels the overall evidenc
   assert.equal(report.facts.find(item => item.name === 'live-child').state, 'present');
   assert.equal(report.facts.find(item => item.name === 'live-child-and-source').state, 'unavailable');
   assert.match(renderDiagnosis(report), /Native inspection incomplete/);
+  assert.doesNotMatch(renderDiagnosis(report), /Live child, source binding, startup proof and saved provider-session availability have not been inspected/);
+  assert.match(renderDiagnosis(report), /only the specific facts shown were collected/);
   assert.equal(report.recovery.command, null);
   const cancelled = await diagnoseLane({ ...f.options, inspectNative: true, signal: AbortSignal.abort() });
   assert.equal(cancelled.facts.find(item => item.name === 'live-child-and-source').state, 'not-inspected');

@@ -159,7 +159,10 @@ export async function inspectDiagnosis(options, snapshot) {
   }
   report.facts.push(...facts);
   report.gaps.push(...gaps);
-  if (report.nativeReadiness === 'inspected') report.gaps = report.gaps.filter(gap => !gap.startsWith('Live child, source binding'));
+  if (report.nativeReadiness === 'inspected' || facts.length)
+    report.gaps = report.gaps.filter(gap => !gap.startsWith('Live child, source binding'));
+  if (report.nativeReadiness === 'incomplete' && facts.length)
+    report.gaps.push('Native inspection is incomplete; only the specific facts shown were collected. Provider-session availability remains unproven.');
   report.gaps.push('No provider transcript search, resume, tests or execution occurred. Native inspection does not establish runtime entitlement or authorization.');
   return report;
 }
