@@ -39,7 +39,7 @@ async function fixture(t) {
   const intentProof = { version: 1, workflowId: flow.id, laneId: lane.id, incarnationId: lane.incarnationId, nonce: 'nonce', paneId: 'child', workspaceId: 'w1', source: 'native-baa', profile };
   const ready = { version: 1, nonce: 'nonce', paneId: 'child', workspaceId: 'w1', source: 'native-baa', profile, harness: 'claude', sessionId: 'child-session', operations: ['plan','dispatch','complete'] };
   await writeFile(startup, JSON.stringify(intentProof)); await writeFile(startup+'.ready', JSON.stringify(ready));
-  const previous = { kind: 'dispatch-intent', intentId: 'initial', workflowId: flow.id, sourcePath: filename, sourceSha256: preview.sourceSha256, taskId: 'writer', root, sessionFile: native.sessionFile, paneId: 'p1', workspaceId: 'w1' };
+  const previous = { kind: 'dispatch-intent', intentId: 'initial', workflowId: flow.id, sourcePath: filename, sourceSha256: preview.sourceSha256, taskId: 'writer', root: prepared.root, sessionFile: native.sessionFile, paneId: 'p1', workspaceId: 'w1' };
   const records = [{ kind: 'preview', ...preview }, { ...prepared, nativeReadiness: readiness, sessionFile: native.sessionFile },
     { ...prepared, kind: 'planned', workflowId: flow.id, sessionFile: native.sessionFile }, previous,
     { kind: 'dispatch-attempt', intentId: 'initial', toolCallId: 'original-call' },

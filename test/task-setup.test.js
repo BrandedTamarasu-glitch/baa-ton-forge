@@ -44,7 +44,7 @@ test('guided setup creates a linked writer and a reviewer dependency, then passe
   await writeFile(path.join(result.worktree, 'file.txt'), 'implemented');
   git(result.worktree, 'add', '.'); git(result.worktree, 'commit', '-m', 'implement');
   const commit = git(result.worktree, 'rev-parse', 'HEAD');
-  const verified = { kind: 'verified', taskId: 'writer', root: f.root, sourcePath: result.preview.sourcePath, sourceSha256: result.preview.sourceSha256, repository: prepared.repository, commit };
+  const verified = { kind: 'verified', taskId: 'writer', root: prepared.root, sourcePath: result.preview.sourcePath, sourceSha256: result.preview.sourceSha256, repository: prepared.repository, commit };
   await assert.rejects(prepareLane({ ...opts, taskId: 'review', records: [verified] }), /not integrated/);
   git(f.root, 'merge', '--ff-only', commit);
   await assert.rejects(prepareLane({ ...opts, taskId: 'review', records: [verified] }), /not integrated/);
