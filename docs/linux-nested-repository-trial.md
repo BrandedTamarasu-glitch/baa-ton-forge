@@ -310,7 +310,8 @@ not show the confirmation interaction or the final entry's `handoffId` and
 `verificationDraftId`; their persistence is not independently confirmed by this
 report. Declining confirmation, cancellation, crash recovery, and failed-save
 paths were not demonstrated in this live transcript. Automated coverage remains
-separate, as does Zach's outstanding Windows qualification for issue #5. See the
+separate. Issue #5 was subsequently closed on the project owner's report of
+Zach's successful Windows run; that does not qualify these handoff paths. See the
 [full trial procedure](verification-handoff-trial.md) for those additional checks.
 
 ## Current issue coverage
@@ -323,6 +324,7 @@ separate, as does Zach's outstanding Windows qualification for issue #5. See the
 - [Issue #5](https://github.com/BrandedTamarasu-glitch/baa-ton-forge/issues/5):
   automatic creation, reuse, and actual native planning are now qualified on
   Linux. Portable regression tests pass in both Linux and Windows CI, but use
-  fixture Herdr transport. Keep this issue open until the separate
+  fixture Herdr transport. On September 21, 2026, the project owner reported
+  Zach's successful native Windows run, and the issue was closed. See the
   [native Windows automatic-binding regression](windows-source-workspace-trial.md)
-  reaches actual `herdr_plan` without manual source-workspace setup.
+  for the procedure and attribution; detailed Windows output was not supplied.

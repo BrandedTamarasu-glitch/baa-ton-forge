@@ -28,8 +28,52 @@ Baa-ton owns lane dispatch and receipts. Root independently verifies completion.
 Do not spawn nested agents inside lanes.
 ```
 
-The adapter requires a structured brief; it does not itself convert prose into
-one. You can also use Baa-ton directly without this adapter, in which case these
+For guided setup, ask the owning Pi root:
+
+```text
+Set up a task to add keyboard navigation to the settings page.
+Use this application's repository and my configured implementation and review
+profiles. Clarify the acceptance criteria and file scope, then show me the
+forgeflow_setup_preview. Create the reviewed setup under my authorization
+and prepare the writer. Stop before planning or dispatch.
+```
+
+Pi gathers the objective, acceptance criteria, file scopes, validation checks,
+application checkout, and exact authorized writer/reviewer assignments. It calls
+`forgeflow_setup_preview` with these fields; users do not need to write JSON.
+The preview shows the complete brief, resolved profiles, new branch, and paths.
+`forgeflow_setup_apply` takes the saved `draftId` after review under existing
+authorization, creates the brief and clean linked writer/review worktrees, and saves
+the normal lane preview. Pi then calls `forgeflow_prepare_lane` for `writer`,
+which performs the existing native ownership and source-workspace checks.
+
+This first setup flow supports one application repository, one writer and one
+dependent read-only reviewer. The default task directory is a sibling of the
+application checkout, named `<application>-forge-<task-name>`, containing
+`brief.json`, `writer/`, and `review/`; an existing absolute `parentDirectory` may be chosen.
+It must be outside the controller and application checkouts. The writer branch
+is `forge/<task-name>`. Existing destinations and branches are never adopted.
+No changes to tracked files or Git ignore rules are needed.
+
+The reviewer uses a separate detached worktree. **After the writer commit is
+integrated and independently verified by the root**, the root must fast-forward
+the review checkout to that integrated commit under existing authorization.
+The dependency gate rejects a stale review checkout. This preserves the writer's
+native workspace and historical verification. Setup does not commit or integrate work.
+Each application must be clean; unrelated edits in a separate controller are
+allowed. Changed HEADs or configured profiles require another setup preview.
+Attempts are recorded under the repository's common Git directory in
+`forgeflow-task-setup/<task-name>.json`. An interrupted attempt preserves its
+resources and blocks retry for inspection; no automatic rollback or cleanup is
+performed. Setup drafts belong to the originating Pi session. The setup flow has
+automated Git/native-fixture coverage and a passing
+[native Linux trial through planning](docs/linux-guided-setup-trial.md).
+Dispatch, completion and Windows guided setup are not qualified by that trial.
+Use the [native guided setup trial](docs/guided-setup-trial.md) and its disposable
+fixture generator to qualify setup through actual native planning.
+
+Pi interprets the prose; the adapter validates the structured result. You can
+also use Baa-ton directly without this adapter, in which case these
 preparation and verification-record checks are not involved.
 
 ## What it does
@@ -168,9 +212,11 @@ normal hooks and integrated it through the guarded fast-forward path. Dispatch
 did not automatically commit, integrate or verify the result.
 
 Linux and Windows CI also pass the portable source-workspace
-tests, which use a fixture Herdr transport. The separate native Windows
-automatic-binding test for [issue #5](https://github.com/BrandedTamarasu-glitch/baa-ton-forge/issues/5)
-remains outstanding.
+tests, which use a fixture Herdr transport. On September 21, 2026, the project
+owner reported Zach's successful native Windows run, completing the remaining
+qualification for [issue #5](https://github.com/BrandedTamarasu-glitch/baa-ton-forge/issues/5),
+which is now closed. Detailed Windows command output and workflow IDs were not
+supplied; this is attributed confirmation, not a new independently observed run.
 
 The [Linux dirty-controller regression](docs/linux-nested-repository-trial.md#dirty-controller-native-regression)
 also passed native preparation, source reuse, actual planning and read-only
@@ -180,7 +226,8 @@ dispatch; its configured Haiku profile was not runtime-qualified.
 
 This is an early local integration. Dispatch requires an explicit user-confirmed
 handoff or a separately authorized native Baa-ton call. It does not automatically
-create worktrees, merge, cancel workflows, or retire resources. Editing a brief changes
+merge, cancel workflows, or retire resources. Guided setup can create a reviewed
+writer and review worktrees before preparation. Editing a brief changes
 its hash; it does not cancel older workflows. Inspect existing plans before
 creating replacements. Live harness availability and provider/model qualification
 remain Baa-ton's responsibility. Run `herdr_doctor` in the owning root before
@@ -232,8 +279,9 @@ Use native absolute paths for the machine running Pi. Without `repoCwd`, existin
 single-repository behavior is unchanged. With `repoCwd`, **both writers and
 read-only reviewers need a distinct linked `worktreeCwd`**; preview withholds plan
 arguments until it is assigned. The integration checkout may itself be a linked
-worktree on the intended integration branch. Forge never creates worktrees or
-merges commits. Keep nested repositories and generated state intentionally
+worktree on the intended integration branch. Guided task setup can create the
+writer/review worktrees; preparation itself does not create them or merge commits.
+Keep nested repositories and generated state intentionally
 excluded from the parent repository where appropriate; the application integration
 checkout and lane worktree must remain clean.
 
@@ -276,8 +324,8 @@ for the application's native source ID.
 Automated tests cover nested repositories, aliases, integration, dependencies,
 branch drift and native-manifest reconciliation. The source-workspace regression
 runs on Linux and Windows CI with a fixture Herdr transport. Linux live trials
-and Zach's Windows confirmation for issue #1 are described above; the new
-automatic source-binding path still needs its own native Windows qualification.
+and the project owner's reports of Zach's Windows confirmations for issues #1
+and #5 are described above.
 
 ## Shared Baa-ton worker profiles
 
@@ -527,9 +575,32 @@ Use `/forgeflow-dispatch-audit` to inspect the latest intent, attempt and result
 in the current session branch without starting a model turn. Resume the owning
 session to retain these guards. A crash, missing result, failed readiness check
 or send failure remains unresolved and is not automatically retried or reset.
-Inspect native durable state before recovery; this version deliberately provides
-no retry/recovery command. These are orchestration guards, not a filesystem or
+Inspect native durable state before recovery. These are orchestration guards, not a filesystem or
 process sandbox. Independent completion verification remains a later root step.
+
+For the narrow case where a single Claude child started but Herdr returned
+`agent_not_ready` **before any task prompt attempt**, an explicit recovery
+handoff is available:
+
+```text
+/forgeflow-retry-startup "/absolute/path/to/brief.md"
+```
+
+Paste only the command line; send follow-up instructions separately. This command
+requires the original owning session, an audited native error result, an
+unchanged clean checkout and profile, the existing workflow/source binding, and
+the same idle/ready Claude child with matching original startup attestation.
+It never answers trust dialogs, changes a profile, restarts a child, or clears
+the prior attempt. Native Baa-ton must independently requalify and reuse that
+child before sending the task. Other failures, missing results, prompt attempts,
+receipts, changed session/ownership or incomplete proof remain blocked.
+
+The confirmation shows the original attempt, workflow, profile and existing
+child. Approval allows one exact native dispatch call and a model handoff turn,
+with fresh checks before confirmation, after it and before the call. A new
+intent links to the old one through `retryOf`; both attempts remain in history.
+Cancellation and reloading do not authorize a retry. This recovery path has
+automated coverage; native qualification is still pending.
 
 The [Linux live trial](docs/linux-nested-repository-trial.md#single-dispatch-and-independent-verification)
 exercised confirmation, one native dispatch, audit recording, receipt delivery,
@@ -572,7 +643,8 @@ does not invent one. Automated Linux/Windows coverage exercises this guidance.
 The [native Linux guidance trial](docs/linux-nested-repository-trial.md#native-verification-guidance)
 confirmed missing-receipt, uncommitted-work, and missing-integration blockers,
 followed by independent root validation and saved verification. This does not
-qualify the current manifest layout in native Windows Pi; that retest remains open.
+independently qualify verification guidance on native Windows Pi. The reported
+Windows success for issue #5 covers that issue's preparation/planning scope.
 
 ### Root verification handoff
 
@@ -580,7 +652,8 @@ The [native Linux trial](docs/linux-nested-repository-trial.md#native-verificati
 reported fresh root checks, an evidence-linked draft, a separate review display,
 and a subsequent saved verification for the same commit. Its report distinguishes
 the observed path from unshown confirmation/provenance details and untested live
-failure paths. Windows issue #5 qualification remains outstanding.
+failure paths. Issue #5's reported Windows success does not qualify these
+additional verification-handoff paths.
 
 Once a completed lane is committed and integrated, the owning user can enter:
 
@@ -861,7 +934,8 @@ Use an ancestry-preserving integration for this version; squashed/rebased
 equivalents are not inferred. A later lane checkout change invalidates verification
 of an earlier lane HEAD. Prepare dependent worktrees after integrating changes.
 
-The adapter never creates worktrees, calls Baa-ton tools itself, changes Baa-ton
+Outside explicit guided task setup, the adapter does not create worktrees.
+It never calls Baa-ton tools itself, changes Baa-ton
 ledgers, or merges code. Preserve each system's ledger and keep generated state
 local. Use Git local exclusions for `.forgeflow/`, `.baa-ton/herdr-orchestrator/`,
 and legacy `.pi/herdr-orchestrator/`. Exclude the runtime subdirectory rather than
