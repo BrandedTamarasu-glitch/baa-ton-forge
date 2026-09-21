@@ -1,7 +1,11 @@
 # Native Windows source-workspace regression
 
 Tracking: [issue #5](https://github.com/BrandedTamarasu-glitch/baa-ton-forge/issues/5).
-Status: procedure prepared; no live Windows result recorded yet. The CI matrix
+Status: on September 21, 2026, the project owner reported that Zach confirmed a
+successful native Windows run. Issue #5 was closed as completed on that basis.
+Detailed command output and workflow IDs were not supplied. The procedure below
+remains the reproducible regression specification; the confirmation does not
+claim broader Windows dispatch or verification qualification. The CI matrix
 runs real Git with a fixture Herdr transport, not a live Baa-ton controller.
 
 ## Prerequisites
@@ -76,7 +80,8 @@ absence after an unresolved request requires investigation.
 - No second root, model substitution, manual source-workspace setup or dispatch.
 
 Record a qualified result only after the owning root has independently checked
-these facts. This document does not claim the trial has run.
+these facts. The reported successful run is attributed above; no detailed live
+transcript has been attached to this document.
 
 ## Manifest and session ownership regression
 

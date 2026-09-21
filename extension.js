@@ -8,6 +8,7 @@ import { checkContinuation } from './continuation-readiness.js';
 import { registerDispatchOnce } from './dispatch-once.js';
 import { registerVerificationHandoff } from './verification-handoff.js';
 import { registerVerificationAudit } from './verification-audit.js';
+import { registerTaskSetup } from './task-setup.js';
 import { verificationGuidance, renderVerificationGuidance } from './verification-guidance.js';
 import { recoverSubmission } from './recovery.js';
 import { nativePreflight } from './preflight.js';
@@ -32,6 +33,7 @@ function renderHandoff(prepared) {
 export default function adapter(pi) {
   const sessionProof = (ctx, signal) => nativeSessionOptions(pi, ctx, signal);
   if (pi.registerTool) registerVerificationAudit(pi);
+  if (pi.registerTool) registerTaskSetup(pi, records);
   if (pi.on) registerDispatchOnce(pi, records);
   const verificationHandoff = pi.on && pi.registerTool ? registerVerificationHandoff(pi, records, saveVerification) : null;
   const pending = new Map();
