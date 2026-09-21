@@ -67,6 +67,8 @@ Attempts are recorded under the repository's common Git directory in
 resources and blocks retry for inspection; no automatic rollback or cleanup is
 performed. Setup drafts belong to the originating Pi session. The new setup
 flow has automated Git/native-fixture coverage; it has not yet been live-qualified.
+Use the [native guided setup trial](docs/guided-setup-trial.md) and its disposable
+fixture generator to qualify setup through actual native planning.
 
 Pi interprets the prose; the adapter validates the structured result. You can
 also use Baa-ton directly without this adapter, in which case these
