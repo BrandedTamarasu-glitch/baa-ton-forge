@@ -101,7 +101,7 @@ export async function inspectDiagnosis(options, snapshot) {
         current.repo_key !== saved.repoKey || spaces.filter(s => s.workspace_id === saved.workspaceId).length !== 1;
       fact('live-source-binding', sourceChanged ? 'conflicting' : 'present',
         { recorded: saved?.workspaceId ?? null, observed: current.source_workspace_id ?? null }, 'worktree list / workspace list');
-    }
+    } else fact('live-source-binding', 'not-inspected', null, 'no-recorded-source-binding');
     let eligibility = null;
     if (report.recovery.state === 'candidate-only') {
       const prior = selectDispatchAudit(options.records ?? [], workflow.id).attempts.at(-1)?.intent;
@@ -149,6 +149,13 @@ export async function inspectDiagnosis(options, snapshot) {
     report.nextStep = diagnosisStep('inspect-incomplete', 'Resolve the native evidence gap', report.blockers.at(-1));
   } finally {
     controller.abort(); clearTimeout(timer); options.signal?.removeEventListener('abort', abort);
+  }
+  if (report.nativeReadiness === 'inspected') {
+    report.facts = report.facts.filter(item => item.name !== 'live-child-and-source');
+  } else if (facts.length) {
+    report.facts = report.facts.map(item => item.name === 'live-child-and-source'
+      ? { ...item, state: 'unavailable', value: 'Native inspection incomplete; see specific facts and blockers.' }
+      : item);
   }
   report.facts.push(...facts);
   report.gaps.push(...gaps);
