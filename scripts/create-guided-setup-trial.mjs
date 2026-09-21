@@ -64,7 +64,11 @@ Result sheet: ${path.join(directory, 'RESULTS.md')}
 Procedure: ${path.join(adapter, 'docs/guided-setup-trial.md')}
 
 Run in the existing registered Pi root for the controller above. Load the current
-Forge extension from ${path.join(adapter, 'extension.js')} using /reload first.
+Forge extension from ${path.join(adapter, 'extension.js')}. The user can enter
+/reload directly in Pi; do not try to invoke it through a model tool or bash.
+If both setup tools are already exposed from the updated extension, continue
+without treating unavailable programmatic reload as a failure. Run Pi version
+diagnostics only as standalone commands, separate from other shell checks.
 If tools remain missing, fully restart Pi in the same owning pane and resume the
 same session. Never run interactive Pi through rtk proxy.
 

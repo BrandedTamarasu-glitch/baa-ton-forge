@@ -26,7 +26,10 @@ use, Pi gathers the same fields from a plain-language request.
 ## Native run
 
 Use the existing registered Pi root in the controller listed in `fixture.json`.
-Load the updated extension using `/reload`. If tools remain stale, restart Pi in
+The user enters `/reload` directly in the Pi input UI; it is not a model tool or
+a shell command. If the two setup tools are already exposed from the expected
+updated extension, missing programmatic reload is not itself a trial failure.
+If tools remain stale, restart Pi in
 the same pane and resume the same session. Do not create or reset a root for this
 trial. Authorization covers the reviewed fixture setup, one automatic source
 workspace and one native writer plan; it does not cover dispatch or cleanup.
@@ -36,6 +39,14 @@ workspace and one native writer plan; it does not cover dispatch or cleanup.
    identity. Confirm `forgeflow_setup_preview` and `forgeflow_setup_apply` are
    loaded. Run `herdr_doctor` and inspect current-root failures before proceeding.
    Record controller HEAD, Git index hash/status, and application baseline HEAD.
+   Inspect the full doctor's `details.checks`, not only the summary: the current
+   pane's registered `program.id` must match the controller checkout. A workspace
+   label or shell cwd does not change its registration. Stop on a foreign-project
+   mapping; `/reload` cannot repair it. Keep the exact diagnostic and actual
+   pane/workspace/session in the result sheet.
+   Run version diagnostics separately. Baa-ton permits standalone `pi --version`
+   but rejects it inside a compound shell command as a possible agent launch.
+   Do not combine it with Git checks or bypass the guard with a wrapper.
    Keep unrelated controller changes intact. Run `node check.mjs baseline` in
    the application. Use native read-only inventory to confirm it has no source
    workspace; if already bound, report the unexpected state rather than remove it.
