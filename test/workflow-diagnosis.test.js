@@ -194,3 +194,46 @@ test('oversized native output and newly appended session evidence suppress eligi
   assert.equal(changed.recovery.command, null);
   assert.match(changed.blockers.join(' '), /Session evidence changed/);
 });
+
+test('successful native inspection replaces the saved placeholder with specific facts', async t => {
+  const f = await fixture(t);
+  const saved = await diagnoseLane(f.options);
+  assert.equal(saved.facts.find(item => item.name === 'live-child-and-source').state, 'not-inspected');
+  const live = await diagnoseLane({ ...f.options, inspectNative: true });
+  assert.equal(live.nativeReadiness, 'inspected');
+  assert.equal(live.facts.some(item => item.name === 'live-child-and-source'), false);
+  assert.equal(live.facts.find(item => item.name === 'live-child').state, 'present');
+  assert.equal(live.facts.find(item => item.name === 'live-source-binding').state, 'present');
+  assert.doesNotMatch(renderDiagnosis(live), /live-child-and-source/);
+});
+
+test('partial inspection preserves observed facts and labels the overall evidence incomplete', async t => {
+  const f = await fixture(t);
+  const exec = async (bin, args, options) => args[0] === 'worktree'
+    ? { code: 1, stdout: '', stderr: JSON.stringify({ error: { code: 'unavailable' } }) }
+    : f.options.exec(bin, args, options);
+  const report = await diagnoseLane({ ...f.options, inspectNative: true, exec });
+  assert.equal(report.nativeReadiness, 'incomplete');
+  assert.equal(report.facts.find(item => item.name === 'live-child').state, 'present');
+  assert.equal(report.facts.find(item => item.name === 'live-child-and-source').state, 'unavailable');
+  assert.match(renderDiagnosis(report), /Native inspection incomplete/);
+  assert.doesNotMatch(renderDiagnosis(report), /Live child, source binding, startup proof and saved provider-session availability have not been inspected/);
+  assert.match(renderDiagnosis(report), /only the specific facts shown were collected/);
+  assert.equal(report.recovery.command, null);
+  const cancelled = await diagnoseLane({ ...f.options, inspectNative: true, signal: AbortSignal.abort() });
+  assert.equal(cancelled.facts.find(item => item.name === 'live-child-and-source').state, 'not-inspected');
+});
+
+test('successful inspection retains specific not-inspected facts for missing saved bindings', async t => {
+  const f = await fixture(t);
+  f.flow.lanes[0].completionReceipt = { id: 'receipt', summary: 'PASS' };
+  delete f.flow.lanes[0].paneId;
+  delete f.flow.worktreeBinding;
+  await f.save();
+  const report = await diagnoseLane({ ...f.options, inspectNative: true });
+  assert.equal(report.nativeReadiness, 'inspected', report.blockers.join(' '));
+  assert.equal(report.facts.some(item => item.name === 'live-child-and-source'), false);
+  assert.equal(report.facts.find(item => item.name === 'live-child').state, 'not-inspected');
+  assert.equal(report.facts.find(item => item.name === 'live-source-binding').state, 'not-inspected');
+  assert.equal(report.diagnosis, 'completion-awaiting-verification');
+});
