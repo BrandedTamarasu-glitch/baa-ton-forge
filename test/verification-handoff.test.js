@@ -94,6 +94,35 @@ test('blocked prerequisites, unavailable UI and outstanding dispatch create no v
   }
 });
 
+test('short final verification resolves accepted validation but starts new checks without inheriting approval', async () => {
+  const f = fixture();
+  await f.commands.get('forgeflow-verification-handoff').handler('"brief.json" writer --before-integration', f.ctx);
+  await f.call(); await f.draft(); await f.review();
+  const previous = f.intent().handoffId, inspected = [];
+  f.install(undefined, async options => { inspected.push(options); return structuredClone(f.report); });
+  await f.commands.get('forgeflow-verification-handoff').handler('writer\n', f.ctx);
+  assert.notEqual(f.intent().handoffId, previous);
+  assert.equal(f.intent().beforeIntegration, undefined);
+  assert.equal(inspected[0].filename, f.report.sourcePath);
+  assert.equal(inspected[0].beforeIntegration, false);
+  assert.equal(f.saves.length, 0);
+  await assert.rejects(f.draft(), /No matching root tool result/);
+  const g = fixture();
+  await g.commands.get('forgeflow-verification-handoff').handler('writer', g.ctx);
+  assert.equal(g.intent(), undefined);
+  assert.match(g.notices.at(-1)[0], /unambiguous accepted/);
+});
+
+test('verification tolerates argument whitespace but rejects split paths and extra commands', async () => {
+  const f = fixture();
+  await f.commands.get('forgeflow-verification-handoff').handler('\r\n"brief.json"\nwriter\n', f.ctx);
+  assert.ok(f.intent());
+  for (const args of ['"brief\nname.json" writer', 'brief-\nname.json writer', 'brief.json writer\n/another-command']) {
+    const g = fixture(); await g.commands.get('forgeflow-verification-handoff').handler(args, g.ctx);
+    assert.equal(g.intent(), undefined); assert.equal(g.messages.length, 0);
+  }
+});
+
 test('draft requires every requirement and rejects invented or pre-handoff tool references', async () => {
   const f = fixture();
   f.entries.push({ type: 'message', message: { role: 'toolResult', toolCallId: 'old', toolName: 'bash', isError: false, content: [{ type: 'text', text: 'old run' }] } });

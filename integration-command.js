@@ -5,6 +5,7 @@ import { integrationPreview, renderIntegration } from './integration.js';
 import { inspectNativeRoot, nativePreflight } from './preflight.js';
 import { nativeSessionOptions } from './native-pi-identity.js';
 import { checkout } from './prepare.js';
+import { resolveValidatedTask } from './verification-handoff.js';
 
 const ENTRY = 'forgeflow-adapter';
 const message = error => error instanceof Error ? error.message : String(error);
@@ -15,19 +16,7 @@ async function integrationNativeProof(options) {
 }
 function parse(args, records) {
   if (/^[a-z][a-z0-9-]*$/.test(args.trim())) {
-    const taskId = args.trim(), candidates = new Map();
-    for (const accepted of records.filter(item => item.kind === 'integration-validation')) {
-      const intents = records.filter(item => item.kind === 'verification-handoff' && item.handoffId === accepted.handoffId);
-      if (intents.length !== 1) throw new Error('Ambiguous validation history; use the explicit brief path.');
-      const intent = intents[0];
-      if (intent.taskId !== taskId) continue;
-      if (!intent.beforeIntegration || intent.workflowId !== accepted.workflowId ||
-          typeof intent.sourcePath !== 'string' || !path.isAbsolute(intent.sourcePath))
-        throw new Error('Incomplete validation history; use the explicit brief path.');
-      candidates.set(JSON.stringify([intent.sourcePath, intent.workflowId]), intent.sourcePath);
-    }
-    if (candidates.size !== 1) throw new Error('Short form requires one unambiguous accepted writer validation in this session; use the explicit brief path.');
-    return { filename: [...candidates.values()][0], taskId };
+    return resolveValidatedTask(args.trim(), records);
   }
   const match = /^(?:"([^"\r\n]+)"|([^"\s]+))\s+([a-z][a-z0-9-]*)(?:\s+--review\s+([a-z][a-z0-9-]*))?$/.exec(args.trim());
   // Pasted newlines around/between arguments are whitespace, not extra commands.

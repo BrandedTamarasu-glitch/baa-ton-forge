@@ -74,6 +74,15 @@ After application integration, use the existing verification handoff without
 verification. Historical or pre-integration results are not substituted for
 that final verification.
 
+The same accepted-validation short form avoids repasting the brief path:
+
+```text
+/forgeflow-verification-handoff writer
+```
+
+This starts a new final verification handoff with fresh evidence; it only reuses
+the unambiguous brief location. Review its new draft separately.
+
 For an unprepared read-only task in the same brief that depends on this writer:
 
 ```text

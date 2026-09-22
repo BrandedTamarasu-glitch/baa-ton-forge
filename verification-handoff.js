@@ -29,6 +29,22 @@ function matchingNativeArguments(toolName, original, effective) {
   return hash(normalized) === hash(effective);
 }
 
+export function resolveValidatedTask(taskId, records) {
+  const candidates = new Map();
+  for (const accepted of records.filter(item => item.kind === 'integration-validation')) {
+    const intents = records.filter(item => item.kind === 'verification-handoff' && item.handoffId === accepted.handoffId);
+    if (intents.length !== 1) throw new Error('Ambiguous validation history; use the explicit brief path.');
+    const intent = intents[0];
+    if (intent.taskId !== taskId) continue;
+    if (!intent.beforeIntegration || intent.workflowId !== accepted.workflowId ||
+        typeof intent.sourcePath !== 'string' || !path.isAbsolute(intent.sourcePath))
+      throw new Error('Incomplete validation history; use the explicit brief path.');
+    candidates.set(JSON.stringify([intent.sourcePath, intent.workflowId]), intent.sourcePath);
+  }
+  if (candidates.size !== 1) throw new Error('Short form requires one unambiguous accepted writer validation in this session; use the explicit brief path.');
+  return { filename: [...candidates.values()][0], taskId };
+}
+
 function requirements(report) {
   return [{ id: 'scope', instruction: 'Independently inspect the committed diff and content against the declared scope.' },
     ...report.requiredChecks.map((instruction, i) => ({ id: `check-${i + 1}`, instruction })),
@@ -162,12 +178,15 @@ export function registerVerificationHandoff(pi, records, saveVerification, inspe
         if (records(ctx).some(item => item.kind === 'dispatch-intent' && !records(ctx).some(result => result.kind === 'dispatch-result' && result.intentId === item.intentId)))
           throw new Error('An unresolved dispatch handoff exists; inspect it before validation');
         const match = args.trim().match(/^(?:"([^"\r\n]+)"|([^"\s]+))\s+([a-z][a-z0-9-]*)(?:\s+(--before-integration))?$/);
-        if (!match || /[\r\n]/.test(args)) throw new Error('Usage: /forgeflow-verification-handoff "path/to/brief.json" task-id [--before-integration]');
-        const report = await inspectHere(path.resolve(ctx.cwd, match[1] ?? match[2]), match[3], ctx, Boolean(match[4])); ready(report);
+        const short = args.trim().match(/^([a-z][a-z0-9-]*)(?:\s+(--before-integration))?$/);
+        if ((!match && !short) || /\0/.test(args)) throw new Error('Usage: /forgeflow-verification-handoff ["path/to/brief.json"] task-id [--before-integration]. Keep filenames unbroken.');
+        const params = short ? resolveValidatedTask(short[1], records(ctx)) : { filename: match[1] ?? match[2], taskId: match[3] };
+        const beforeIntegration = Boolean(short ? short[2] : match[4]);
+        const report = await inspectHere(path.resolve(ctx.cwd, params.filename), params.taskId, ctx, beforeIntegration); ready(report);
         const intent = { kind: 'verification-handoff', handoffId: randomUUID(), sourcePath: report.sourcePath,
           sourceSha256: report.sourceSha256, taskId: report.taskId, workflowId: report.workflowId,
           current: report.current, commit: report.evidence.commit, checkouts: report.evidence,
-          ...(match[4] ? { beforeIntegration: true } : {}),
+          ...(beforeIntegration ? { beforeIntegration: true } : {}),
           fingerprint: fingerprint(report), requirements: requirements(report) };
         append(intent); armed = intent.handoffId;
         pi.sendMessage({ customType: 'forgeflow-verification-handoff', display: true, details: intent,
