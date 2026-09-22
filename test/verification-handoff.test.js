@@ -30,7 +30,8 @@ function fixture() {
   const start = () => commands.get('forgeflow-verification-handoff').handler('"brief.json" writer', ctx);
   const invoke = (name, params) => tools.get(name).execute('tool', params, undefined, undefined, ctx);
   const call = async (id = 'check', isError = false, toolName = 'bash') => {
-    const input = toolName === 'read' ? { path: 'status.txt' } : { command: 'run the fixture checks' };
+    const input = { read: { path: 'status.txt' }, grep: { pattern: 'ready' },
+      find: { pattern: '*.txt' }, ls: {} }[toolName] ?? { command: 'run the fixture checks' };
     entries.push({ id: `call-${id}`, type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', id, name: toolName, arguments: input }] } });
     const blocked = await hooks.get('tool_call')({ toolName, toolCallId: id, input }, ctx);
     if (!blocked) {
@@ -181,6 +182,40 @@ test('effective argument changes and failed handoff delivery cannot silently pro
   assert.equal(g.records().at(-1).kind, 'verification-handoff');
   assert.equal((await g.call()).block, true);
   assert.equal(g.saves.length, 0);
+});
+
+test('native optional-null normalization preserves actual result provenance', async () => {
+  for (const [toolName, optional] of [['read', { offset: null, limit: null }], ['bash', { timeout: null }],
+    ['grep', { path: null, glob: null, ignoreCase: null, literal: null, context: null, limit: null }],
+    ['find', { path: null, limit: null }], ['ls', { path: null, limit: null }]]) {
+    const f = fixture(); await f.start(); await f.call('check', false, toolName);
+    const call = f.entries.find(entry => entry.id === 'call-check').message.content[0];
+    call.arguments = { ...call.arguments, ...optional };
+    const before = structuredClone(f.entries);
+    const evidence = (await f.invoke('forgeflow_verification_evidence', { handoffId: f.intent().handoffId })).details.evidence;
+    assert.equal(evidence[0].resultEntryId, 'result-check');
+    assert.deepEqual(evidence[0].input, f.records().find(item => item.kind === 'verification-tool-call').input);
+    assert.deepEqual(f.entries, before);
+    assert.equal((await f.draft()).details.eligible, true);
+  }
+});
+
+test('normalization rejects removed non-null, required or unknown arguments and changed results', async () => {
+  for (const alter of [
+    call => { call.arguments.offset = 1; },
+    call => { call.arguments.path = null; },
+    call => { call.arguments.unknown = null; },
+    (call, f) => { call.arguments.offset = null; f.records().find(item => item.kind === 'verification-tool-result').input = { path: 'elsewhere' }; },
+  ]) {
+    const f = fixture(); await f.start(); await f.call('check', false, 'read');
+    const call = f.entries.find(entry => entry.id === 'call-check').message.content[0];
+    call.arguments = { ...call.arguments }; alter(call, f);
+    await assert.rejects(f.draft(), /Missing or ambiguous/);
+  }
+  const f = fixture(); await f.start(); await f.call('check', true, 'read');
+  const call = f.entries.find(entry => entry.id === 'call-check').message.content[0];
+  call.arguments = { ...call.arguments, offset: null };
+  await assert.rejects(f.draft(), /failed or unknown/);
 });
 
 test('the owning user can cancel after a broken brief without adopting foreign pane identity', async () => {

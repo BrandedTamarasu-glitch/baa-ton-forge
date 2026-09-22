@@ -10,6 +10,25 @@ const hash = value => createHash('sha256').update(JSON.stringify(value)).digest(
 const message = error => error instanceof Error ? error.message : String(error);
 const text = value => (value ?? []).filter(item => item.type === 'text').map(item => item.text).join('\n');
 
+// Pi normalizes optional, non-nullable schema properties before tool_call.
+// Limit compatibility to known built-in fields; required/unknown fields and
+// every non-null value must still match the effective execution arguments.
+const OPTIONAL_NATIVE_FIELDS = {
+  read: ['offset', 'limit'], bash: ['timeout'],
+  grep: ['path', 'glob', 'ignoreCase', 'literal', 'context', 'limit'],
+  find: ['path', 'limit'], ls: ['path', 'limit'],
+};
+function matchingNativeArguments(toolName, original, effective) {
+  if (hash(original) === hash(effective)) return true;
+  if (!original || typeof original !== 'object' || Array.isArray(original) ||
+      !effective || typeof effective !== 'object' || Array.isArray(effective)) return false;
+  const normalized = { ...original };
+  for (const key of OPTIONAL_NATIVE_FIELDS[toolName] ?? []) {
+    if (normalized[key] === null && !Object.hasOwn(effective, key)) delete normalized[key];
+  }
+  return hash(normalized) === hash(effective);
+}
+
 function requirements(report) {
   return [{ id: 'scope', instruction: 'Independently inspect the committed diff and content against the declared scope.' },
     ...report.requiredChecks.map((instruction, i) => ({ id: `check-${i + 1}`, instruction })),
@@ -40,7 +59,7 @@ export function collectVerificationEvidence(intent, records, entries) {
     const observed = records.filter(item => item.kind === 'verification-tool-result' && item.handoffId === intent.handoffId && item.toolCallId === attempt.toolCallId);
     if (calls.length !== 1 || results.length !== 1 || observed.length !== 1 || calls[0].name !== attempt.toolName ||
         hash(observed[0].input) !== hash(attempt.input) ||
-        hash(calls[0].arguments) !== hash(attempt.input) || results[0].message.toolName !== attempt.toolName ||
+        !matchingNativeArguments(attempt.toolName, calls[0].arguments, attempt.input) || results[0].message.toolName !== attempt.toolName ||
         typeof results[0].id !== 'string' || !results[0].id)
       throw new Error(`Missing or ambiguous native root tool evidence for ${attempt.toolCallId}`);
     const result = results[0], output = text(result.message.content);
