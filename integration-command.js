@@ -15,8 +15,9 @@ async function integrationNativeProof(options) {
     : inspectNativeRoot(options);
 }
 function parse(args, records) {
-  if (/^[a-z][a-z0-9-]*$/.test(args.trim())) {
-    return resolveValidatedTask(args.trim(), records);
+  const short = /^([a-z][a-z0-9-]*)(?:\s+--review\s+([a-z][a-z0-9-]*))?$/.exec(args.trim());
+  if (short) {
+    return { ...resolveValidatedTask(short[1], records), ...(short[2] ? { reviewTaskId: short[2] } : {}) };
   }
   const match = /^(?:"([^"\r\n]+)"|([^"\s]+))\s+([a-z][a-z0-9-]*)(?:\s+--review\s+([a-z][a-z0-9-]*))?$/.exec(args.trim());
   // Pasted newlines around/between arguments are whitespace, not extra commands.

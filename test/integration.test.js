@@ -178,6 +178,28 @@ test('short form resolves only unambiguous accepted validation and still checks 
   }
 });
 
+test('short review form preserves the explicit destination through preview and approval', async () => {
+  const f = commandFixture(), inspected = [], proofs = [];
+  f.records.push({ kind: 'verification-handoff', handoffId: 'h', taskId: 'writer',
+    sourcePath: '/long path/brief.json', workflowId: 'flow', beforeIntegration: true },
+  { kind: 'integration-validation', handoffId: 'h', workflowId: 'flow' });
+  f.report.reviewTaskId = 'review';
+  f.report.destination.root = '/review';
+  registerIntegration(f.pi, () => f.records, async options => { inspected.push(options); return f.report; },
+    async options => { proofs.push(options); return {}; });
+  await f.commands.get('forgeflow-integration-preview').handler('writer --review review', f.ctx);
+  assert.equal(f.records.length, 2);
+  await f.commands.get('forgeflow-integrate-once').handler('writer\n--review\nreview\n', f.ctx);
+  assert.ok(inspected.every(options => options.filename === '/long path/brief.json' && options.reviewTaskId === 'review'));
+  assert.equal(f.records.at(-1).reviewTaskId, 'review');
+  assert.ok(proofs.length > 0);
+  assert.ok(proofs.every(options => options.prepared.planArguments.worktreeCwd === '/review'));
+  const count = f.records.length;
+  await f.commands.get('forgeflow-integrate-once').handler('writer --review', f.ctx);
+  assert.equal(f.records.length, count);
+  assert.match(f.notices.at(-1), /Use/);
+});
+
 test('cancel, state drift, audit failure and reload cannot execute or repeat integration', async () => {
   const cancelled = commandFixture(); cancelled.ctx.ui.confirm = async () => false; await cancelled.start(); assert.equal(cancelled.records.length, 0);
   const drift = commandFixture(); await drift.start(); drift.report.fingerprint = 'changed'; assert.equal((await drift.call()).block, true);

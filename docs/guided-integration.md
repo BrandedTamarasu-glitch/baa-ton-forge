@@ -90,6 +90,13 @@ For an unprepared read-only task in the same brief that depends on this writer:
 /forgeflow-integrate-once "/absolute/path with spaces/brief.json" writer --review review
 ```
 
+With an unambiguous accepted validation in this session, the short forms are:
+
+```text
+/forgeflow-integration-preview writer --review review
+/forgeflow-integrate-once writer --review review
+```
+
 The destination must be a distinct clean linked worktree in the same repository,
 with no preparation/submission/mapping record and no durable workflow using it.
 Other dependencies must be verified in the proposed commit. Native handoff also
