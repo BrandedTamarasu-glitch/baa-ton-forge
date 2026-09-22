@@ -109,8 +109,20 @@ remain separate. Advancing a review checkout does not start a reviewer.
 
 ## Qualification
 
-Automated tests cover local Git histories and mocked native handoffs. Live
-approval, integration, final verification and review preparation still need a
-disposable trial in the owning Pi root. Preserve historical workflows. Use a
+Automated tests cover local Git histories and mocked native handoffs. A disposable
+native trial completed on 2026-09-22: accepted pre-integration validation,
+application and review fast-forwards, separate final writer verification,
+dependent review preparation, reviewer completion and final root verification.
+Both lanes finished at the same clean commit. The trial reviewed fixture output;
+it does not constitute an independent code review of this implementation.
+
+Receipt delivery initially stalled and passed after native activation of the
+Baa-ton supervisor fix in [Baa-ton PR #6](https://github.com/zachristmas/baa-ton/pull/6).
+That fix isolates historical manifest errors and records delivery diagnostics.
+It is a separate Baa-ton change; installing Forge alone does not update the
+supervisor. The integration audit and already-integrated no-op path have automated
+coverage but were not separately audited in the final native trial report.
+
+Preserve historical workflows. Use a
 fresh Pi process resuming the same session after an update if `/reload` retains
 old module behavior; a checkout hash alone does not prove loaded code.

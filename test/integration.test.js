@@ -141,7 +141,7 @@ test('pasted argument whitespace is accepted without joining filenames or accept
     await f.commands.get('forgeflow-integrate-once').handler(args, f.ctx);
     assert.equal(f.records.length, 1, f.notices.join('; '));
     assert.equal(inspected[0].taskId, 'writer');
-    assert.equal(inspected[0].filename, args.includes('trial application') ? '/trial application/brief.json' : '/brief.json');
+    assert.equal(inspected[0].filename, path.resolve(f.ctx.cwd, args.includes('trial application') ? '/trial application/brief.json' : '/brief.json'));
     assert.equal(inspected[0].reviewTaskId, args.includes('--review') ? 'review' : undefined);
   }
   for (const args of ['/tmp/forge-guided-integration-\ntrial/brief.json writer',
@@ -163,7 +163,7 @@ test('short form resolves only unambiguous accepted validation and still checks 
   const inspected = [];
   registerIntegration(f.pi, () => f.records, async options => { inspected.push(options); return f.report; }, async () => ({}));
   await f.commands.get('forgeflow-integrate-once').handler('writer\n', f.ctx);
-  assert.equal(inspected[0].filename, '/long path/brief.json');
+  assert.equal(inspected[0].filename, path.resolve(f.ctx.cwd, '/long path/brief.json'));
   assert.equal(inspected[0].taskId, 'writer');
   assert.equal(f.records.at(-1).kind, 'integration-intent');
   for (const alter of [g => { g.records.length = 0; }, g => { g.records[0].taskId = 'other'; },
@@ -190,7 +190,7 @@ test('short review form preserves the explicit destination through preview and a
   await f.commands.get('forgeflow-integration-preview').handler('writer --review review', f.ctx);
   assert.equal(f.records.length, 2);
   await f.commands.get('forgeflow-integrate-once').handler('writer\n--review\nreview\n', f.ctx);
-  assert.ok(inspected.every(options => options.filename === '/long path/brief.json' && options.reviewTaskId === 'review'));
+  assert.ok(inspected.every(options => options.filename === path.resolve(f.ctx.cwd, '/long path/brief.json') && options.reviewTaskId === 'review'));
   assert.equal(f.records.at(-1).reviewTaskId, 'review');
   assert.ok(proofs.length > 0);
   assert.ok(proofs.every(options => options.prepared.planArguments.worktreeCwd === '/review'));
