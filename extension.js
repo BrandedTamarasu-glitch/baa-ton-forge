@@ -13,7 +13,9 @@ import { registerDiagnosis } from './workflow-diagnosis-command.js';
 import { registerIntegration } from './integration-command.js';
 import { verificationGuidance, renderVerificationGuidance } from './verification-guidance.js';
 import { recoverSubmission } from './recovery.js';
-import { nativePreflight } from './preflight.js';
+import { nativePreflight, inspectNativeRoot } from './preflight.js';
+import { registerAcceptanceScope } from './acceptance-command.js';
+import { requiresScopedHandoff } from './acceptance.js';
 import { nativeSessionOptions } from './native-pi-identity.js';
 import { readManifestSnapshot } from './manifest-snapshot.js';
 import { isDeepStrictEqual } from 'node:util';
@@ -40,6 +42,11 @@ export default function adapter(pi) {
   registerIntegration(pi, records);
   if (pi.on) registerDispatchOnce(pi, records);
   const verificationHandoff = pi.on && pi.registerTool ? registerVerificationHandoff(pi, records, saveVerification) : null;
+  if (verificationHandoff) registerAcceptanceScope(pi, records, {
+    assertIdleHandoff: ctx => verificationHandoff.assertDirectVerificationAllowed(ctx),
+    proveRoot: async ctx => inspectNativeRoot({ prepared: { root: await realpath(ctx.cwd) },
+      sessionFile: ctx.sessionManager.getSessionFile(), ...sessionProof(ctx, ctx.signal), exec: pi.exec?.bind(pi), signal: ctx.signal }),
+  });
   const pending = new Map();
   async function recover(params, ctx) {
     if (pending.size) throw new Error('A plan is still in flight; wait for its result');
@@ -88,6 +95,9 @@ export default function adapter(pi) {
   }
   async function verify(params, ctx) {
     verificationHandoff?.assertDirectVerificationAllowed(ctx);
+    const mapped = records(ctx).findLast(item => item.kind === 'planned' && item.workflowId === params.workflowId);
+    if (mapped && requiresScopedHandoff(await loadPreview(mapped.sourcePath, { cwd: ctx.cwd }), records(ctx)))
+      throw new Error('Scoped acceptance requires a fresh final verification handoff and user-reviewed evidence; direct attestation cannot bypass its requirements');
     return saveVerification(params, ctx);
   }
   async function saveVerification(params, ctx, provenance = {}) {

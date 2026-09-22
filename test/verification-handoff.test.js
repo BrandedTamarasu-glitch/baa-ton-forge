@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { realpathSync } from 'node:fs';
+import { scopedAcceptance } from '../acceptance.js';
 import { registerVerificationHandoff } from '../verification-handoff.js';
 import { registerVerificationAudit, verificationAudit, renderVerificationAudit } from '../verification-audit.js';
 Object.assign(process.env, { HERDR_ENV: '1', HERDR_PANE_ID: 'p', HERDR_WORKSPACE_ID: 'w' });
@@ -360,4 +361,44 @@ test('audit does not adopt a different context or treat a new branch as proof of
   const count = f.entries.length;
   await f.commands.get('forgeflow-verification-audit').handler('herdr-one extra', f.ctx);
   assert.equal(f.entries.length, count); assert.match(f.notices.at(-1)[0], /only an optional/);
+});
+
+
+test('scoped validation keeps later requirements pending and requires fresh final evidence', async () => {
+  const f = fixture();
+  const preview = { acceptance: ['Correct text', 'Integrated application', 'Reviewer advanced'],
+    workflows: [{ taskId: 'writer' }, { taskId: 'review' }], acceptanceScopes: [
+      { requirementId: 'acceptance-1', taskIds: ['writer', 'review'], phase: 'pre-integration' },
+      { requirementId: 'acceptance-2', taskIds: ['writer'], phase: 'final' },
+      { requirementId: 'acceptance-3', taskIds: ['review'], phase: 'final' }] };
+  f.report.acceptance = preview.acceptance;
+  f.install(undefined, async options => ({ ...structuredClone(f.report), ...scopedAcceptance(preview, options) }));
+  await f.commands.get('forgeflow-verification-handoff').handler('brief.json writer --before-integration', f.ctx);
+  assert.deepEqual(f.intent().requirements.map(item => item.id), ['scope', 'check-1', 'acceptance-1']);
+  await f.call(); const before = (await f.draft()).details;
+  assert.equal(before.deferredAcceptance.length, 2);
+  await f.review(); assert.equal(f.records().at(-1).kind, 'integration-validation');
+  await f.start();
+  assert.deepEqual(f.intent().requirements.map(item => item.id), ['scope', 'check-1', 'acceptance-1', 'acceptance-2']);
+  await assert.rejects(f.draft(), /No matching root tool result/);
+  await f.call('final');
+  const results = f.assessments('final'); results.at(-1).outcome = 'blocked';
+  await f.draft(results); await f.review(); assert.equal(f.saves.length, 0);
+  const audit = verificationAudit(f.entries);
+  assert.match(renderVerificationAudit(audit), /Pending elsewhere/);
+  assert.deepEqual(before.deferredAcceptance.map(item => item.id), ['acceptance-2', 'acceptance-3']);
+});
+
+test('changed scope metadata or eligibility cannot be saved before or during confirmation', async () => {
+  for (const during of [false, true]) {
+    const f = fixture();
+    f.report.acceptanceScope = { source: 'brief', phase: 'final', scopes: [] };
+    f.report.deferredAcceptance = [{ id: 'acceptance-2', instruction: 'Review', taskIds: ['review'], phase: 'final' }];
+    await f.start(); await f.call(); await f.draft();
+    const draft = f.records().find(item => item.kind === 'verification-draft');
+    const alter = () => { draft.deferredAcceptance = []; };
+    if (during) f.ctx.ui.confirm = async () => { alter(); return true; }; else alter();
+    await f.review(); assert.equal(f.saves.length, 0);
+    assert.match(f.notices.at(-1)[0], /scope or evidence changed/);
+  }
 });

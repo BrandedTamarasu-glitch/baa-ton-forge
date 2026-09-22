@@ -121,7 +121,28 @@ Baa-ton supervisor fix in [Baa-ton PR #6](https://github.com/zachristmas/baa-ton
 That fix isolates historical manifest errors and records delivery diagnostics.
 It is a separate Baa-ton change; installing Forge alone does not update the
 supervisor. The integration audit and already-integrated no-op path have automated
-coverage but were not separately audited in the final native trial report.
+coverage. Their native follow-up results are recorded below.
+
+### Read-only follow-up reported on 2026-09-22
+
+The owning session reported two complete integration intent → attempt → result
+chains, one for the application and one for review. Each matched one successful
+native fast-forward to `ee80811b1b1020d4812090dfccbe3db6de059fc3`, with no
+duplicate attempts or integration-blocked records found. This closes the native
+integration-audit qualification gap based on the owning session's report; it is
+not an independent inspection by the documentation author.
+
+The already-integrated no-op preview remains **BLOCKED**. Native preview returned
+`ENOENT`, and `/tmp/forge-guided-integration-trial-pdyb7gs8/` was absent. No native
+“no changes” result was established. Native inspection also reported source
+workspace `w1K` not found. The cause of either absence is unknown; these findings
+do not establish cleanup, loss of historical verification, or safe recreation.
+
+The owning session reported no record or resource modifications, cleanup,
+recreation, or dispatch during this follow-up. Writer and reviewer verification
+remain historical evidence from the completed authorized phase. Any future
+no-op qualification must identify its own available checkout and evidence; it
+must not be described as a successful rerun of this unavailable trial.
 
 Preserve historical workflows. Use a
 fresh Pi process resuming the same session after an update if `/reload` retains

@@ -18,4 +18,4 @@ jobs:
         with:
           node-version: '22'
       - name: Test nested Git setup, preparation-to-planning and next-action status
-        run: node --test test/task-setup.test.js test/manifest-path.test.js test/session-path.test.js test/native-pi-identity.test.js test/source-workspace.test.js test/repositories.test.js test/status.test.js test/continuation.test.js test/continuation-readiness.test.js test/dispatch-once.test.js test/dispatch-retry.test.js test/workflow-diagnosis.test.js test/verification-handoff.test.js test/integration.test.js
+        run: node --test test/acceptance.test.js test/task-setup.test.js test/manifest-path.test.js test/session-path.test.js test/native-pi-identity.test.js test/source-workspace.test.js test/repositories.test.js test/status.test.js test/continuation.test.js test/continuation-readiness.test.js test/dispatch-once.test.js test/dispatch-retry.test.js test/workflow-diagnosis.test.js test/verification-handoff.test.js test/integration.test.js
