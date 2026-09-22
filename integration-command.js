@@ -15,7 +15,9 @@ async function integrationNativeProof(options) {
 }
 function parse(args) {
   const match = /^(?:"([^"\r\n]+)"|([^"\s]+))\s+([a-z][a-z0-9-]*)(?:\s+--review\s+([a-z][a-z0-9-]*))?$/.exec(args.trim());
-  if (!match || /[\r\n]/.test(args)) throw new Error('Use "brief.json" writer-task [--review review-task] on one line.');
+  // Pasted newlines around/between arguments are whitespace, not extra commands.
+  // Never join a split filename: that could silently select a different brief.
+  if (!match || /\0/.test(args)) throw new Error('Use "brief.json" writer-task [--review review-task]. Whitespace between arguments is allowed; keep the filename unbroken and omit extra commands.');
   return { filename: match[1] ?? match[2], taskId: match[3], ...(match[4] ? { reviewTaskId: match[4] } : {}) };
 }
 export function registerIntegration(pi, records, inspect = integrationPreview, proveRoot = integrationNativeProof, inspectCheckout = checkout) {

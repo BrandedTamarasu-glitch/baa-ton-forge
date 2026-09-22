@@ -133,6 +133,28 @@ test('one native handoff rechecks and records a successful exact merge then bloc
   await f.start(); assert.equal(f.records.filter(r => r.kind === 'integration-intent').length, 1);
 });
 
+test('pasted argument whitespace is accepted without joining filenames or accepting extra commands', async () => {
+  for (const args of [' /brief.json writer\n', '\r\n"/trial application/brief.json"\r\nwriter\r\n',
+    '/brief.json\nwriter\n--review\nreview']) {
+    const f = commandFixture(), inspected = [];
+    registerIntegration(f.pi, () => f.records, async options => { inspected.push(options); return f.report; }, async () => ({}));
+    await f.commands.get('forgeflow-integrate-once').handler(args, f.ctx);
+    assert.equal(f.records.length, 1, f.notices.join('; '));
+    assert.equal(inspected[0].taskId, 'writer');
+    assert.equal(inspected[0].filename, args.includes('trial application') ? '/trial application/brief.json' : '/brief.json');
+    assert.equal(inspected[0].reviewTaskId, args.includes('--review') ? 'review' : undefined);
+  }
+  for (const args of ['/tmp/forge-guided-integration-\ntrial/brief.json writer',
+    '"/trial\napplication/brief.json" writer', '/brief.json writer\n/another-command',
+    '/brief.json writer\nrun more', '/brief.json writer\0']) {
+    const f = commandFixture();
+    await f.commands.get('forgeflow-integrate-once').handler(args, f.ctx);
+    assert.equal(f.records.length, 0);
+    assert.equal(f.messages.length, 0);
+    assert.match(f.notices.at(-1), /keep the filename unbroken/);
+  }
+});
+
 test('cancel, state drift, audit failure and reload cannot execute or repeat integration', async () => {
   const cancelled = commandFixture(); cancelled.ctx.ui.confirm = async () => false; await cancelled.start(); assert.equal(cancelled.records.length, 0);
   const drift = commandFixture(); await drift.start(); drift.report.fingerprint = 'changed'; assert.equal((await drift.call()).block, true);
