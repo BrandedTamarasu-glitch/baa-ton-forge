@@ -155,6 +155,29 @@ test('pasted argument whitespace is accepted without joining filenames or accept
   }
 });
 
+test('short form resolves only unambiguous accepted validation and still checks readiness', async () => {
+  const seed = f => f.records.push({ kind: 'verification-handoff', handoffId: 'h', taskId: 'writer',
+    sourcePath: '/long path/brief.json', workflowId: 'flow', beforeIntegration: true },
+  { kind: 'integration-validation', handoffId: 'h', workflowId: 'flow' });
+  const f = commandFixture(); seed(f);
+  const inspected = [];
+  registerIntegration(f.pi, () => f.records, async options => { inspected.push(options); return f.report; }, async () => ({}));
+  await f.commands.get('forgeflow-integrate-once').handler('writer\n', f.ctx);
+  assert.equal(inspected[0].filename, '/long path/brief.json');
+  assert.equal(inspected[0].taskId, 'writer');
+  assert.equal(f.records.at(-1).kind, 'integration-intent');
+  for (const alter of [g => { g.records.length = 0; }, g => { g.records[0].taskId = 'other'; },
+    g => { g.records[0].sourcePath = 'relative.json'; },
+    g => { g.records.push({ ...g.records[0], handoffId: 'h2', sourcePath: '/other.json' }, { ...g.records[1], handoffId: 'h2' }); },
+    g => { g.report.state = 'blocked'; g.report.blockers = ['Stale validation']; }]) {
+    const g = commandFixture(); seed(g); alter(g);
+    await g.commands.get('forgeflow-integrate-once').handler('writer', g.ctx);
+    assert.equal(g.records.some(item => item.kind === 'integration-intent'), false);
+    assert.equal(g.messages.length, 0);
+    assert.ok(g.notices.length);
+  }
+});
+
 test('cancel, state drift, audit failure and reload cannot execute or repeat integration', async () => {
   const cancelled = commandFixture(); cancelled.ctx.ui.confirm = async () => false; await cancelled.start(); assert.equal(cancelled.records.length, 0);
   const drift = commandFixture(); await drift.start(); drift.report.fingerprint = 'changed'; assert.equal((await drift.call()).block, true);

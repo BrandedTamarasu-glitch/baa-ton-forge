@@ -13,7 +13,22 @@ async function integrationNativeProof(options) {
     ? { readiness: await nativePreflight({ ...options, ensureSource: false }) }
     : inspectNativeRoot(options);
 }
-function parse(args) {
+function parse(args, records) {
+  if (/^[a-z][a-z0-9-]*$/.test(args.trim())) {
+    const taskId = args.trim(), candidates = new Map();
+    for (const accepted of records.filter(item => item.kind === 'integration-validation')) {
+      const intents = records.filter(item => item.kind === 'verification-handoff' && item.handoffId === accepted.handoffId);
+      if (intents.length !== 1) throw new Error('Ambiguous validation history; use the explicit brief path.');
+      const intent = intents[0];
+      if (intent.taskId !== taskId) continue;
+      if (!intent.beforeIntegration || intent.workflowId !== accepted.workflowId ||
+          typeof intent.sourcePath !== 'string' || !path.isAbsolute(intent.sourcePath))
+        throw new Error('Incomplete validation history; use the explicit brief path.');
+      candidates.set(JSON.stringify([intent.sourcePath, intent.workflowId]), intent.sourcePath);
+    }
+    if (candidates.size !== 1) throw new Error('Short form requires one unambiguous accepted writer validation in this session; use the explicit brief path.');
+    return { filename: [...candidates.values()][0], taskId };
+  }
   const match = /^(?:"([^"\r\n]+)"|([^"\s]+))\s+([a-z][a-z0-9-]*)(?:\s+--review\s+([a-z][a-z0-9-]*))?$/.exec(args.trim());
   // Pasted newlines around/between arguments are whitespace, not extra commands.
   // Never join a split filename: that could silently select a different brief.
@@ -49,7 +64,7 @@ export function registerIntegration(pi, records, inspect = integrationPreview, p
     } });
   pi.registerCommand('forgeflow-integration-preview', { description: 'Preview one application or dependent-review fast-forward; never execute',
     handler: async (args, ctx) => {
-      try { const report = await inspectHere(parse(args), ctx);
+      try { const report = await inspectHere(parse(args, records(ctx)), ctx);
         pi.sendMessage({ customType: 'forgeflow-integration-preview', content: renderIntegration(report), details: report, display: true }, { triggerTurn: false });
       } catch (error) { ctx.ui.notify(message(error), 'error'); }
     } });
@@ -60,7 +75,7 @@ export function registerIntegration(pi, records, inspect = integrationPreview, p
       try {
         if (!ctx.hasUI || !ctx.isIdle() || typeof ctx.ui.confirm !== 'function' || !pi.getActiveTools?.().includes('bash'))
           throw new Error('Use an idle interactive owning root with native Bash and confirmation UI.');
-        const params = parse(args), report = await inspectHere(params, ctx); ready(report);
+        const params = parse(args, records(ctx)), report = await inspectHere(params, ctx); ready(report);
         if (records(ctx).some(item => item.kind === 'integration-intent' && item.workflowId === report.workflowId && item.reviewTaskId === report.reviewTaskId))
           throw new Error('Integration was already handed off for this destination; inspect its audit. No retry.');
         const proof = await native(report, ctx);

@@ -36,6 +36,18 @@ Rerun the preview, then request one native invocation:
 /forgeflow-integrate-once "/absolute/path with spaces/brief.json" writer
 ```
 
+To avoid pasting a long path, an accepted pre-integration validation also permits:
+
+```text
+/forgeflow-integration-preview writer
+/forgeflow-integrate-once writer
+```
+
+The short form resolves the brief from this session's accepted validation records.
+It requires a single unambiguous brief/workflow for that writer task; otherwise
+use the explicit path. It performs the same fresh evidence and ownership checks
+and requires the same confirmations. It does not resume or retry an earlier intent.
+
 Forge rechecks evidence and owning-root identity around confirmation, records an
 intent, and requests one exact native `bash` call. Baa-ton's existing fast-forward
 approval hook must approve that call and recheck Git state. Forge does not run
