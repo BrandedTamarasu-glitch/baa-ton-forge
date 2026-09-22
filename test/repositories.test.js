@@ -244,8 +244,13 @@ test('verification guidance reports committed scope violations without treating 
   assert.equal(report.verified, false);
 });
 
-test('native handoff uses real checkout evidence and the existing verification saver', async t => {
-  const f = await fixture(t, '.baa-ton/herdr-orchestrator'), prepared = await prepareLane({ ...f, taskId: 'a' });
+for (const scoped of [false, true]) test(`native handoff uses real checkout evidence and saver (scoped=${scoped})`, async t => {
+  const f = await fixture(t, '.baa-ton/herdr-orchestrator');
+  if (scoped) {
+    f.brief.acceptanceScopes = [{ requirementId: 'acceptance-1', taskIds: ['a', 'b'], phase: 'final' }];
+    f.preview = await f.save();
+  }
+  const prepared = await prepareLane({ ...f, taskId: 'a' });
   const done = await complete(f, prepared);
   git(f.a, 'merge', '--ff-only', done.commit);
   const savedEnv = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]));
@@ -284,6 +289,12 @@ test('native handoff uses real checkout evidence and the existing verification s
   assert.equal(audit.handoffs[0].state, 'saved');
   assert.equal(audit.handoffs[0].saves[0].confirmation, 'recorded-confirmation');
   assert.deepEqual(entries, beforeAudit);
+  if (scoped) {
+    await assert.rejects(tools.get('forgeflow_verify_lane').execute('direct', { workflowId: done.mapped.workflowId, commit: done.commit, evidence: 'Bypass attempt' }, undefined, undefined, ctx), /Scoped acceptance requires/);
+    assert.equal(verified.acceptanceScope.phase, 'final');
+    assert.equal(entries.filter(entry => entry.data?.kind === 'verified').length, 1);
+    return;
+  }
   await tools.get('forgeflow_verify_lane').execute('direct', { workflowId: done.mapped.workflowId, commit: done.commit, evidence: 'Separately reviewed fixture' }, undefined, undefined, ctx);
   assert.equal(entries.at(-1).data.verificationMethod, 'direct');
   audit = (await tools.get('forgeflow_verification_audit').execute('audit-again', {}, undefined, undefined, ctx)).details;

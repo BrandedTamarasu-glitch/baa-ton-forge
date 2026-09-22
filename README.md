@@ -655,6 +655,47 @@ followed by independent root validation and saved verification. This does not
 independently qualify verification guidance on native Windows Pi. The reported
 Windows success for issue #5 covers that issue's preparation/planning scope.
 
+### Acceptance by task and phase
+
+Briefs and guided setup may provide optional `acceptanceScopes`: one entry for
+**every** acceptance criterion, identified in normalized preview order as
+`acceptance-1`, `acceptance-2`, etc. Each entry assigns existing `taskIds` and a
+`phase` of `pre-integration` or `final`. For example:
+
+```json
+"acceptanceScopes": [
+  { "requirementId": "acceptance-1", "taskIds": ["writer", "review"], "phase": "pre-integration" },
+  { "requirementId": "acceptance-2", "taskIds": ["writer"], "phase": "final" },
+  { "requirementId": "acceptance-3", "taskIds": ["review"], "phase": "final" }
+]
+```
+
+Pre-integration criteria remain required at final verification. Other-task and
+later-phase criteria remain visible as pending elsewhere; this never marks them
+passed. Scope inspection and every declared check remain required at both phases.
+Assign post-integration conditions to writer final verification and conditions
+that depend on reviewer advancement to the review task to avoid a dependency
+cycle. Scoped tasks require the evidence handoff; direct verification is rejected.
+Unscoped briefs retain their existing all-criteria behavior.
+
+For an already-dispatched legacy brief, preserve its exact bytes and receipt.
+Cancel any open blocked handoff with `/forgeflow-cancel-verification` (which
+retains its history), then ask the owning root to call
+`forgeflow_preview_acceptance_scope` with the original `filename` and complete
+`scopes` array. Review the proposal, then enter:
+
+```text
+/forgeflow-accept-acceptance-scope <draft-id>
+```
+
+The idle owning root performs native confirmation and records an immutable
+session scope. It checks the brief snapshot and native ownership again before
+saving. It cannot override a declared scope, replace a confirmed scope, adopt
+foreign mappings, or rescope after accepted validation, verification, or an
+integration attempt. A proposal alone changes no validation behavior. Start a
+new handoff with fresh evidence after confirmation; the old blocked draft remains
+blocked. This authorizes no dispatch, integration or cleanup.
+
 ### Root verification handoff
 
 The [native Linux trial](docs/linux-nested-repository-trial.md#native-verification-handoff)

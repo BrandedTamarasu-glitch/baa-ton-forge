@@ -7,6 +7,7 @@ import { verificationGuidance } from '../verification-guidance.js';
 import { verificationFingerprint, buildVerificationDraft, collectVerificationEvidence, registerVerificationHandoff } from '../verification-handoff.js';
 import { integrationPreview, fastForwardCommand } from '../integration.js';
 import { registerIntegration } from '../integration-command.js';
+import { acceptanceScopeDraft } from '../acceptance.js';
 import { loadPreview } from '../planner.js';
 import { verifyLane, checkout } from '../prepare.js';
 
@@ -24,9 +25,10 @@ async function validate(f) {
   assert.equal(report.state, 'awaiting-independent-validation', report.blockers.join(' '));
   const requirements = [{ id: 'scope', instruction: 'Independently inspect the committed diff and content against the declared scope.' },
     ...report.requiredChecks.map((instruction, i) => ({ id: `check-${i + 1}`, instruction })),
-    ...report.acceptance.map((instruction, i) => ({ id: `acceptance-${i + 1}`, instruction }))];
+    ...(report.applicableAcceptance ?? report.acceptance.map((instruction, i) => ({ id: `acceptance-${i + 1}`, instruction })))];
   const intent = { kind: 'verification-handoff', handoffId: 'validation', beforeIntegration: true,
-    workflowId: report.workflowId, commit: report.evidence.commit, fingerprint: verificationFingerprint(report), requirements };
+    workflowId: report.workflowId, commit: report.evidence.commit, fingerprint: verificationFingerprint(report), requirements,
+    ...(report.acceptanceScope ? { acceptanceScope: report.acceptanceScope, deferredAcceptance: report.deferredAcceptance } : {}) };
   const input = { path: path.join(f.target, 'file.txt') };
   f.options.records.push(intent, { kind: 'verification-tool-call', handoffId: intent.handoffId, toolCallId: 'read', toolName: 'read', input },
     { kind: 'verification-tool-result', handoffId: intent.handoffId, toolCallId: 'read', input, isError: false });
@@ -220,4 +222,34 @@ test('preview registration does not arm execution and native ownership failure c
   registerIntegration(f.pi, () => f.records, async () => f.report, async () => { throw new Error('wrong owning root'); });
   await f.start(); assert.equal(f.records.length, 0);
   assert.match(f.notices.at(-1), /wrong owning root/);
+});
+
+
+test('legacy session scope unlocks pre-integration while retaining final obligations and receipt', async t => {
+  const f = await fixture(t);
+  const bytes = await readFile(f.options.filename), preview = await loadPreview(f.options.filename, { cwd: f.options.cwd });
+  const original = structuredClone(f.options.records), receipt = structuredClone(f.flow.lanes[0].completionReceipt);
+  const initial = await verificationGuidance({ ...f.options, beforeIntegration: true });
+  const scope = acceptanceScopeDraft(preview, initial.current,
+    [{ requirementId: 'acceptance-1', taskIds: ['writer'], phase: 'final' }]);
+  f.options.records.push({ kind: 'acceptance-scope-draft', draft: scope }, { kind: 'acceptance-scope', ...scope });
+  const report = await validate(f);
+  assert.deepEqual(report.applicableAcceptance, []);
+  assert.equal(report.deferredAcceptance[0].id, 'acceptance-1');
+  const draft = f.options.records.find(item => item.kind === 'verification-draft');
+  assert.deepEqual(draft.assessments.map(item => item.id), ['scope', 'check-1']);
+  const integration = await integrationPreview(f.options);
+  assert.equal(integration.state, 'ready-for-native-approval', integration.blockers.join(' '));
+  draft.deferredAcceptance = [];
+  assert.equal((await integrationPreview(f.options)).state, 'blocked');
+  draft.deferredAcceptance = report.deferredAcceptance;
+  git(f.options.cwd, 'merge', '--ff-only', integration.evidence.commit);
+  assert.equal((await integrationPreview(f.options)).state, 'already-integrated');
+  const final = await verificationGuidance(f.options);
+  assert.deepEqual(final.applicableAcceptance, [{ id: 'acceptance-1', instruction: 'Correct file' }]);
+  assert.deepEqual(final.deferredAcceptance, []);
+  assert.equal(f.options.records.some(item => item.kind === 'verified'), false);
+  assert.deepEqual(await readFile(f.options.filename), bytes);
+  assert.deepEqual(f.options.records.slice(0, original.length), original);
+  assert.deepEqual(f.flow.lanes[0].completionReceipt, receipt);
 });

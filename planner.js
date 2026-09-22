@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { resolveTaskProfile } from './profiles.js';
+import { normalizeAcceptanceScopes } from './acceptance.js';
 
 function requireValue(condition, message) {
   if (!condition) throw new Error(message);
@@ -78,7 +79,7 @@ export async function loadPreview(filename, { cwd = process.cwd() } = {}) {
 }
 
 export function buildPreview(brief, source = {}, profileConfig) {
-  keys(brief, ['version', 'objective', 'acceptance', 'tasks'], 'brief');
+  keys(brief, ['version', 'objective', 'acceptance', 'acceptanceScopes', 'tasks'], 'brief');
   requireValue(brief.version === 1, 'brief.version must be 1');
   const objective = text(brief.objective, 'objective');
   const acceptance = strings(brief.acceptance, 'acceptance', true);
@@ -103,6 +104,8 @@ export function buildPreview(brief, source = {}, profileConfig) {
   });
   const byId = new Map(tasks.map(task => [task.id, task]));
   requireValue(byId.size === tasks.length, 'Task ids must be unique');
+  const acceptanceScopes = brief.acceptanceScopes === undefined ? undefined :
+    normalizeAcceptanceScopes(acceptance, tasks.map(task => task.id), brief.acceptanceScopes);
   const dependencies = new Map(tasks.map(task => [task.id, new Set(task.dependsOn)]));
   for (const task of tasks) for (const dependency of task.dependsOn) requireValue(byId.has(dependency) && dependency !== task.id, `${task.id}: invalid dependency ${dependency}`);
   function ordered(ids) {
@@ -135,7 +138,7 @@ export function buildPreview(brief, source = {}, profileConfig) {
   for (const task of tasks.filter(task => task.readOnly)) for (const writer of writers) dependencies.get(task.id).add(writer.id);
   const stages = ordered(tasks.map(task => task.id));
   const workflows = tasks.map(task => {
-    const laneObjective = [task.objective, '', `${task.readOnly ? 'Read-only scope' : 'Exclusive write scope'}:`, ...task.files.map(file => `- ${file}`), '', 'Validation required:', ...task.checks.map(check => `- ${check}`), '', 'Acceptance criteria:', ...acceptance.map(item => `- ${item}`), '', 'Use Baa-ton completion receipts. Do not spawn nested agents. Root independently verifies all claims.'].join('\n');
+    const laneObjective = [task.objective, '', `${task.readOnly ? 'Read-only scope' : 'Exclusive write scope'}:`, ...task.files.map(file => `- ${file}`), '', 'Validation required:', ...task.checks.map(check => `- ${check}`), '', 'Acceptance criteria:', ...acceptance.map((item, i) => `- ${item}${acceptanceScopes ? ` [acceptance-${i + 1}; root validation: ${acceptanceScopes[i].taskIds.join(', ')}; ${acceptanceScopes[i].phase === 'pre-integration' ? 'pre-integration and final' : 'final'}]` : ''}`), '', 'Use Baa-ton completion receipts. Do not spawn nested agents. Root independently verifies all claims.'].join('\n');
     const lane = { objective: laneObjective, readOnly: task.readOnly, agentKind: task.agentKind, ...(task.launchProfile ? { launchProfile: task.launchProfile } : {}) };
     return {
       taskId: task.id, objective: task.objective, readOnly: task.readOnly, files: task.files, checks: task.checks,
@@ -146,7 +149,8 @@ export function buildPreview(brief, source = {}, profileConfig) {
       planArguments: (!task.readOnly || task.repoCwd !== undefined) && !task.worktreeCwd ? null : { objective: `${objective}: ${task.objective}`, lanes: [lane], ...(task.worktreeCwd ? { worktreeCwd: task.worktreeCwd } : {}) },
     };
   });
-  return { version: 1, mode: 'preview-only', ...source, objective, acceptance, stages, conflicts, workflows };
+  return { version: 1, mode: 'preview-only', ...source, objective, acceptance,
+    ...(acceptanceScopes ? { acceptanceScopes } : {}), stages, conflicts, workflows };
 }
 
 export function renderPreview(preview) {

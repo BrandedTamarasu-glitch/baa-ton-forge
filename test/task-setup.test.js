@@ -133,3 +133,13 @@ test('a failed worktree creation preserves an inspectable attempt and never writ
   assert.equal(git(f.root, 'status', '--porcelain'), '');
   await assert.rejects(applyTaskSetup(draft, f.root), /already exists/);
 });
+
+
+test('setup preserves explicit complete acceptance scope through preview and apply', async t => {
+  const f = await fixture(t);
+  const acceptanceScopes = [{ requirementId: 'acceptance-1', taskIds: ['review', 'writer'], phase: 'final' }];
+  const draft = await previewTaskSetup({ ...f.input, acceptanceScopes }, f.root);
+  const result = await applyTaskSetup(draft, f.root);
+  assert.deepEqual(JSON.parse(await readFile(result.filename)).acceptanceScopes, acceptanceScopes);
+  assert.deepEqual(result.preview.acceptanceScopes, acceptanceScopes);
+});

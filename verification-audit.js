@@ -41,6 +41,9 @@ export function verificationAudit(entries, { workflowId, current = {} } = {}) {
       if (!intent || entry.index <= intent.index || draft.workflowId !== workflowId || draft.commit !== intent.data.commit || draft.fingerprint !== intent.data.fingerprint)
         problems.push('Draft does not match the preceding handoff workflow, commit or fingerprint.');
       if (evidenceError || !intent || !isDeepStrictEqual(draft.evidence, actual)) problems.push('Draft evidence does not match available native tool evidence.');
+      if (!isDeepStrictEqual(draft.acceptanceScope, intent?.data.acceptanceScope) ||
+          !isDeepStrictEqual(draft.deferredAcceptance, intent?.data.deferredAcceptance))
+        problems.push('Draft acceptance timing or pending requirements differ from the handoff.');
       const assessments = Array.isArray(draft.assessments) ? draft.assessments : [];
       const requirements = Array.isArray(intent?.data.requirements) ? intent.data.requirements : [];
       if (!requirements.length || requirements.some(item => !item || typeof item.id !== 'string') ||
@@ -57,6 +60,7 @@ export function verificationAudit(entries, { workflowId, current = {} } = {}) {
       const eligible = assessments.length > 0 && assessments.every(item => item?.outcome === 'pass') && actual.every(item => !item.isError);
       if (draft.eligible !== eligible) problems.push('Recorded draft eligibility disagrees with its evidence/assessments.');
       return { ...ref(entry), draftId: draft.draftId ?? null, eligible: draft.eligible === true,
+        ...(draft.acceptanceScope ? { acceptanceScope: draft.acceptanceScope, deferredAcceptance: draft.deferredAcceptance } : {}),
         assessments: assessments.map(item => ({ requirementId: item?.id, outcome: item?.outcome, toolCallIds: item?.toolCallIds })), gaps: problems };
     });
     for (const draft of draftReports) gaps.push(...draft.gaps.map(problem => `Draft ${draft.draftId}: ${problem}`));
@@ -127,6 +131,7 @@ export function renderVerificationAudit(report) {
     ...report.handoffs.flatMap(item => [
       `Handoff ${item.handoffId}: ${item.state}\nOwner: ${JSON.stringify(item.owner)} | ${item.context}\nTask: ${item.taskId ?? '?'} | Commit: ${item.commit ?? '?'}`,
       ...item.drafts.map(draft => `Draft ${draft.draftId}: eligible=${draft.eligible}; entry ${draft.entryId ?? '?'}\n${draft.assessments.map(a => `${a.requirementId}: ${a.outcome}; tools=${Array.isArray(a.toolCallIds) ? a.toolCallIds.join(', ') : 'unavailable'}`).join('\n')}`),
+      ...item.drafts.flatMap(draft => (Array.isArray(draft.deferredAcceptance) ? draft.deferredAcceptance : []).filter(requirement => requirement && typeof requirement === 'object').map(requirement => `Pending elsewhere in draft ${draft.draftId}: ${requirement.id}; required for ${Array.isArray(requirement.taskIds) ? requirement.taskIds.join(', ') : 'unavailable'} at ${requirement.phase}; not passed here.`)),
       ...item.decisions.map(decision => `Review ${decision.decision}: draft ${decision.draftId}; entry ${decision.entryId ?? '?'}; ${decision.recordedAt ?? 'time unavailable'}`),
       ...item.saveAttempts.map(attempt => `Save attempt: draft ${attempt.draftId}; entry ${attempt.entryId ?? '?'}; ${attempt.recordedAt ?? 'time unavailable'}`),
       ...item.saves.map(save => `Saved: entry ${save.entryId ?? '?'}; confirmation=${save.confirmation}`),

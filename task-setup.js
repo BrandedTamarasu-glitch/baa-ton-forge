@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import { lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { checkout } from './prepare.js';
 import { buildPreview, loadPreview } from './planner.js';
+import { acceptanceScopesSchema } from './acceptance.js';
 
 const exec = promisify(execFile);
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -31,7 +32,7 @@ function assignment(value, label) {
 // No files are created by preview. Natural-language interpretation belongs to
 // the owning Pi model; this boundary validates the resulting explicit choices.
 export async function previewTaskSetup(input, cwd) {
-  if (Object.keys(input).some(key => !['name', 'objective', 'acceptance', 'files', 'checks', 'repoCwd', 'parentDirectory', 'writer', 'reviewer'].includes(key)))
+  if (Object.keys(input).some(key => !['name', 'objective', 'acceptance', 'acceptanceScopes', 'files', 'checks', 'repoCwd', 'parentDirectory', 'writer', 'reviewer'].includes(key)))
     throw new Error('Unknown task setup field');
   if (!/^[a-z][a-z0-9-]{0,47}$/.test(input.name ?? '')) throw new Error('Setup name must be 1–48 lowercase letters, digits or hyphens, starting with a letter');
   if (!path.isAbsolute(input.repoCwd ?? '')) throw new Error('repoCwd must be an absolute application checkout path');
@@ -53,7 +54,8 @@ export async function previewTaskSetup(input, cwd) {
     config = JSON.parse(contents); configSha256 = hash(contents);
   }
   const worktreeCwd = path.join(directory, 'writer');
-  const brief = { version: 1, objective: input.objective, acceptance: input.acceptance, tasks: [
+  const brief = { version: 1, objective: input.objective, acceptance: input.acceptance,
+    ...(input.acceptanceScopes !== undefined ? { acceptanceScopes: input.acceptanceScopes } : {}), tasks: [
     { id: 'writer', objective: input.objective, files: input.files, checks: input.checks, repoCwd: repository.root, worktreeCwd, ...writer },
     { id: 'review', objective: `Independently review: ${input.objective}`, files: input.files, checks: input.checks, repoCwd: repository.root, worktreeCwd: path.join(directory, 'review'), readOnly: true, dependsOn: ['writer'], ...reviewer },
   ] };
@@ -105,7 +107,7 @@ export function registerTaskSetup(pi, records) {
   const list = { type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1 };
   pi.registerTool({ name: 'forgeflow_setup_preview', label: 'Preview guided task setup',
     description: 'Turn an agreed task into a reviewed setup for one writer and a dependent read-only reviewer. Gather objective, acceptance, file scopes, checks, application repo and authorized worker assignments from the user/context; clarify unresolved requirements and never invent models. Pass these structured fields yourself; users need not edit JSON. Reads Git and configured profiles, saves a session draft, and returns the exact brief, branch, paths and resolved assignments. Creates no files/worktrees. Review the result before forgeflow_setup_apply under existing user authorization. The separate detached review checkout must be fast-forwarded to the integrated writer commit before review preparation.',
-    parameters: { type: 'object', properties: { name: { type: 'string' }, objective: { type: 'string' }, acceptance: list, files: list, checks: list, repoCwd: { type: 'string' }, parentDirectory: { type: 'string' }, writer: assignmentSchema, reviewer: assignmentSchema }, required: ['name', 'objective', 'acceptance', 'files', 'checks', 'repoCwd', 'writer', 'reviewer'], additionalProperties: false },
+    parameters: { type: 'object', properties: { name: { type: 'string' }, objective: { type: 'string' }, acceptance: list, acceptanceScopes: acceptanceScopesSchema, files: list, checks: list, repoCwd: { type: 'string' }, parentDirectory: { type: 'string' }, writer: assignmentSchema, reviewer: assignmentSchema }, required: ['name', 'objective', 'acceptance', 'files', 'checks', 'repoCwd', 'writer', 'reviewer'], additionalProperties: false },
     execute: async (_id, params, _signal, _update, ctx) => {
       const draft = await previewTaskSetup(params, ctx.cwd);
       const sessionFile = ctx.sessionManager.getSessionFile();

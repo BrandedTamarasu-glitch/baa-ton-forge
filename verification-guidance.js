@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { checkout } from './prepare.js';
 import { laneStatus } from './status.js';
 import { loadPreview } from './planner.js';
+import { scopedAcceptance } from './acceptance.js';
 
 const exec = promisify(execFile);
 async function git(cwd, ...args) {
@@ -39,6 +40,7 @@ export async function verificationGuidance(options) {
     const definition = preview.workflows.find(item => item.taskId === task.taskId);
     report.requiredChecks = definition.checks;
     report.acceptance = preview.acceptance;
+    Object.assign(report, scopedAcceptance(preview, { ...options, current: status.current }));
     const mapped = (options.records ?? []).findLast(item => item.kind === 'planned' && item.workflowId === task.workflowId &&
       item.taskId === task.taskId && item.root === status.current.root && item.sourcePath === status.sourcePath && item.sourceSha256 === status.sourceSha256);
     if (!mapped) throw new Error('Matching mapping record is missing');
@@ -101,7 +103,9 @@ export function renderVerificationGuidance(report) {
     ] : []),
     ...report.blockers.map(item => `Blocked: ${item}`),
     ...report.requiredChecks.map(item => `Required validation (not run): ${item}`),
-    ...report.acceptance.map(item => `Acceptance to review: ${item}`),
+    ...(report.applicableAcceptance ?? report.acceptance.map((instruction, i) => ({ id: `acceptance-${i + 1}`, instruction })))
+      .map(item => `Acceptance to review (${item.id}): ${item.instruction}`),
+    ...(report.deferredAcceptance ?? []).map(item => `Pending elsewhere (${item.id}): ${item.instruction} | ${item.taskIds.join(', ')} | ${item.phase}. Not passed by this validation.`),
     `Next: ${report.next}`,
   ].join('\n');
 }
