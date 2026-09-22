@@ -30,7 +30,8 @@ function fixture() {
   const start = () => commands.get('forgeflow-verification-handoff').handler('"brief.json" writer', ctx);
   const invoke = (name, params) => tools.get(name).execute('tool', params, undefined, undefined, ctx);
   const call = async (id = 'check', isError = false, toolName = 'bash') => {
-    const input = toolName === 'read' ? { path: 'status.txt' } : { command: 'run the fixture checks' };
+    const input = { read: { path: 'status.txt' }, grep: { pattern: 'ready' },
+      find: { pattern: '*.txt' }, ls: {} }[toolName] ?? { command: 'run the fixture checks' };
     entries.push({ id: `call-${id}`, type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', id, name: toolName, arguments: input }] } });
     const blocked = await hooks.get('tool_call')({ toolName, toolCallId: id, input }, ctx);
     if (!blocked) {
@@ -66,12 +67,59 @@ test('handoff collects actual root results, drafts, and saves only after user re
   await f.review(); assert.equal(f.saves.length, 1);
 });
 
+test('pre-integration validation closes its handoff without saving final verification', async () => {
+  const f = fixture(), inspected = [];
+  f.report.evidence.integrated = false;
+  f.install(undefined, async options => { inspected.push(options.beforeIntegration); return structuredClone(f.report); });
+  await f.commands.get('forgeflow-verification-handoff').handler('"brief.json" writer --before-integration', f.ctx);
+  assert.equal(f.intent().beforeIntegration, true);
+  await f.call(); await f.draft();
+  f.approve = false; await f.review();
+  assert.equal(f.records().some(item => item.kind === 'integration-validation'), false);
+  f.approve = true; await f.review();
+  assert.equal(f.records().at(-1).kind, 'integration-validation');
+  assert.equal(f.saves.length, 0);
+  assert.equal(f.records().some(item => item.kind === 'verified'), false);
+  assert.ok(inspected.every(value => value === true));
+  assert.equal(await f.hooks.get('tool_call')({ toolName: 'forgeflow_integration_preview' }, f.ctx), undefined);
+  await f.review(); assert.equal(f.records().filter(item => item.kind === 'integration-validation').length, 1);
+});
+
 test('blocked prerequisites, unavailable UI and outstanding dispatch create no validation turn', async () => {
   for (const alter of [f => { f.report.state = 'blocked'; f.report.blockers = ['Uncommitted change']; },
     f => { f.ctx.hasUI = false; }, f => { f.ctx.isIdle = () => false; }, f => { f.pi.getActiveTools = () => []; },
     f => { f.pi.appendEntry('forgeflow-adapter', { kind: 'dispatch-intent', intentId: 'pending' }); }]) {
     const f = fixture(); alter(f); await f.start();
     assert.equal(f.messages.length, 0); assert.equal(f.intent(), undefined);
+  }
+});
+
+test('short final verification resolves accepted validation but starts new checks without inheriting approval', async () => {
+  const f = fixture();
+  await f.commands.get('forgeflow-verification-handoff').handler('"brief.json" writer --before-integration', f.ctx);
+  await f.call(); await f.draft(); await f.review();
+  const previous = f.intent().handoffId, inspected = [];
+  f.install(undefined, async options => { inspected.push(options); return structuredClone(f.report); });
+  await f.commands.get('forgeflow-verification-handoff').handler('writer\n', f.ctx);
+  assert.notEqual(f.intent().handoffId, previous);
+  assert.equal(f.intent().beforeIntegration, undefined);
+  assert.equal(inspected[0].filename, f.report.sourcePath);
+  assert.equal(inspected[0].beforeIntegration, false);
+  assert.equal(f.saves.length, 0);
+  await assert.rejects(f.draft(), /No matching root tool result/);
+  const g = fixture();
+  await g.commands.get('forgeflow-verification-handoff').handler('writer', g.ctx);
+  assert.equal(g.intent(), undefined);
+  assert.match(g.notices.at(-1)[0], /unambiguous accepted/);
+});
+
+test('verification tolerates argument whitespace but rejects split paths and extra commands', async () => {
+  const f = fixture();
+  await f.commands.get('forgeflow-verification-handoff').handler('\r\n"brief.json"\nwriter\n', f.ctx);
+  assert.ok(f.intent());
+  for (const args of ['"brief\nname.json" writer', 'brief-\nname.json writer', 'brief.json writer\n/another-command']) {
+    const g = fixture(); await g.commands.get('forgeflow-verification-handoff').handler(args, g.ctx);
+    assert.equal(g.intent(), undefined); assert.equal(g.messages.length, 0);
   }
 });
 
@@ -163,6 +211,40 @@ test('effective argument changes and failed handoff delivery cannot silently pro
   assert.equal(g.records().at(-1).kind, 'verification-handoff');
   assert.equal((await g.call()).block, true);
   assert.equal(g.saves.length, 0);
+});
+
+test('native optional-null normalization preserves actual result provenance', async () => {
+  for (const [toolName, optional] of [['read', { offset: null, limit: null }], ['bash', { timeout: null }],
+    ['grep', { path: null, glob: null, ignoreCase: null, literal: null, context: null, limit: null }],
+    ['find', { path: null, limit: null }], ['ls', { path: null, limit: null }]]) {
+    const f = fixture(); await f.start(); await f.call('check', false, toolName);
+    const call = f.entries.find(entry => entry.id === 'call-check').message.content[0];
+    call.arguments = { ...call.arguments, ...optional };
+    const before = structuredClone(f.entries);
+    const evidence = (await f.invoke('forgeflow_verification_evidence', { handoffId: f.intent().handoffId })).details.evidence;
+    assert.equal(evidence[0].resultEntryId, 'result-check');
+    assert.deepEqual(evidence[0].input, f.records().find(item => item.kind === 'verification-tool-call').input);
+    assert.deepEqual(f.entries, before);
+    assert.equal((await f.draft()).details.eligible, true);
+  }
+});
+
+test('normalization rejects removed non-null, required or unknown arguments and changed results', async () => {
+  for (const alter of [
+    call => { call.arguments.offset = 1; },
+    call => { call.arguments.path = null; },
+    call => { call.arguments.unknown = null; },
+    (call, f) => { call.arguments.offset = null; f.records().find(item => item.kind === 'verification-tool-result').input = { path: 'elsewhere' }; },
+  ]) {
+    const f = fixture(); await f.start(); await f.call('check', false, 'read');
+    const call = f.entries.find(entry => entry.id === 'call-check').message.content[0];
+    call.arguments = { ...call.arguments }; alter(call, f);
+    await assert.rejects(f.draft(), /Missing or ambiguous/);
+  }
+  const f = fixture(); await f.start(); await f.call('check', true, 'read');
+  const call = f.entries.find(entry => entry.id === 'call-check').message.content[0];
+  call.arguments = { ...call.arguments, offset: null };
+  await assert.rejects(f.draft(), /failed or unknown/);
 });
 
 test('the owning user can cancel after a broken brief without adopting foreign pane identity', async () => {

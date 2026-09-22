@@ -400,6 +400,7 @@ The adapter exposes these native model-callable tools:
 | Tool | Arguments | Result |
 | --- | --- | --- |
 | `forgeflow_status` | `filename` | Read-only task, workflow, verification and owning-root snapshot |
+| `forgeflow_integration_preview` | `filename`, `taskId`, optional `reviewTaskId` | Read-only fast-forward proposal with root validation and destination checks |
 | `forgeflow_diagnose_lane` | `filename`, `taskId`, optional `inspectNative` | Explain selected workflow evidence and a supported next step; explicit live inspection is read-only |
 | `forgeflow_continue` | `filename` | Preview one next root step, required checks and stop reason; no execution |
 | `forgeflow_check_readiness` | `filename` | Read-only local/native prerequisite checks; no repair or dispatch |
@@ -501,6 +502,11 @@ session history but does not start a model turn. If a new tool is absent after
 `/reload`, restart Pi in the same Herdr pane and resume the same owning root session.
 
 ### Preview root continuation
+
+For a completed writer, use [guided integration](docs/guided-integration.md) to
+validate before integration, preview an exact fast-forward, and hand it to the
+existing native approval path. Final verification and dependent review
+preparation remain separate checked steps.
 
 Use native `forgeflow_continue` with `filename`, or enter:
 

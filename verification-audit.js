@@ -96,7 +96,8 @@ export function verificationAudit(entries, { workflowId, current = {} } = {}) {
     const contextMatches = owner && ['root', 'sessionFile', 'paneId', 'workspaceId'].every(key => owner[key] && owner[key] === current[key]);
     return { handoffId, ...ref(intent), owner, context: contextMatches ? 'recorded-context-matches' : 'different-or-unestablished-context',
       commit: intent?.data.commit ?? null, taskId: intent?.data.taskId ?? null,
-      state: gaps.length ? 'evidence-gaps' : verifications.length ? 'saved' : attempts.length ? 'save-unresolved' : cancellations.length ? 'cancelled' : drafts.length ? 'draft-awaiting-save' : 'validation-unfinished',
+      state: gaps.length ? 'evidence-gaps' : verifications.length ? 'saved' : attempts.length ? 'save-unresolved' : cancellations.length ? 'cancelled' :
+        children.some(item => item.data.kind === 'integration-validation') ? 'pre-integration-validation-accepted' : drafts.length ? 'draft-awaiting-save' : 'validation-unfinished',
       drafts: draftReports, decisions: decisions.map(entry => ({ ...ref(entry), draftId: entry.data.draftId, decision: entry.data.decision })),
       saveAttempts: attempts.map(entry => ({ ...ref(entry), draftId: entry.data.draftId })), saves: saveReports,
       cancellations: cancellations.map(ref),
